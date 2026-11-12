@@ -44,6 +44,22 @@
 #bur .pad .bt.p { width:62px; height:34px; border-radius:12px; font-size:12px; }
 #bur .pad .bt.c { width:42px; height:42px; border-radius:10px; font-size:14px; }
 #bur .pad .bt.on { background:rgba(233,214,168,.35); border-color:#e9d6a8; color:#fff; }
+/* 12/11 : gros bouton « Piloter le PC » dans la barre du pouce (miroir du bouton photo), bien visible, DA or pâle */
+#btnPilote { position:absolute; right:86px; top:50%; margin-top:-26px; width:52px; height:52px; z-index:2; padding:0; border-radius:50%;
+  display:grid; place-items:center; color:#e9d6a8; border:1px solid rgba(233,214,168,.5);
+  background:radial-gradient(circle at 50% 38%, rgba(233,214,168,.2), rgba(233,214,168,.05) 62%, rgba(2,3,10,.4));
+  box-shadow:0 0 18px rgba(233,214,168,.22), inset 0 0 10px rgba(233,214,168,.12); transition:transform .15s, box-shadow .3s; }
+#btnPilote svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+#btnPilote::before { content:""; position:absolute; inset:-5px; border-radius:50%; border:1px solid rgba(233,214,168,.28); animation:piloteHalo 3.2s ease-in-out infinite; pointer-events:none; }
+#btnPilote::after { content:""; position:absolute; top:3px; right:5px; width:5px; height:5px; border-radius:50%; background:#fff6dc; box-shadow:0 0 6px 1px rgba(255,240,200,.9); animation:piloteEtoile 2.6s ease-in-out infinite; pointer-events:none; }
+#btnPilote:active { transform:scale(.92); }
+#btnPilote.on { color:#ffb3ad; border-color:rgba(255,143,134,.55); box-shadow:0 0 18px rgba(255,143,134,.3); }
+@keyframes piloteHalo { 0%,100% { opacity:.25; transform:scale(.96); } 50% { opacity:.9; transform:scale(1.06); } }
+@keyframes piloteEtoile { 0%,100% { opacity:.35; transform:scale(.7); } 50% { opacity:1; transform:scale(1.15); } }
+@media (prefers-reduced-motion: reduce) { #btnPilote::before, #btnPilote::after { animation:none; } }
+@media (orientation: landscape) and (max-height: 560px) { #btnPilote { right:106px; } }
+/* l'en-tête débordait sur les téléphones étroits (réglages poussés hors écran) : en portrait, le gros bouton remplace la pilule « PC » */
+@media (orientation: portrait) and (max-width: 440px) { html.piloteBas #btnBureau { display:none; } }
 `;
   const st = document.createElement("style");
   st.textContent = css;
@@ -98,7 +114,14 @@
     clearTimeout(message.t);
     if (t && duree) message.t = setTimeout(() => msgEl.classList.remove("vu"), duree);
   }
-  function avis(t) { if (typeof window.avis === "function") window.avis(t); else alert(t); }
+  function avis(t) {   // 12/11 : le bandeau #avis de la page (la fonction avis de index.html n'est pas sur window : jamais d'alert())
+    const a = $("avis");
+    if (!a) { if (typeof window.avis === "function") window.avis(t); return; }
+    a.textContent = t || "";
+    a.classList.toggle("vu", !!t);
+    clearTimeout(avis.t);
+    if (t) avis.t = setTimeout(() => { if (a.textContent === t) a.classList.remove("vu"); }, 6000);
+  }
   function envoyer(d) { if (ws && ws.readyState === 1) { ws.send(JSON.stringify(d)); return true; } return false; }
   function vib(n) { try { navigator.vibrate && navigator.vibrate(n); } catch (x) {} }
 
@@ -227,6 +250,7 @@
     actif = true; essais = 0; finDefinitive = false; img = null; iw = ih = 0; z = 1; cxn = cyn = 0.5;
     ov.classList.add("vu"); ov.classList.remove("cache", "clavier");
     $("btnBureau") && $("btnBureau").classList.add("on");
+    $("btnPilote") && $("btnPilote").classList.add("on");
     tailler();
     try { NA.garderEcran && NA.garderEcran(true); } catch (x) {}
     connecter(demande);
@@ -238,6 +262,7 @@
     padReset();
     ov.classList.remove("vu", "clavier");
     $("btnBureau") && $("btnBureau").classList.remove("on");
+    $("btnPilote") && $("btnPilote").classList.remove("on");
     try { ta.blur(); } catch (x) {}
     try { if (document.fullscreenElement) document.exitFullscreen(); } catch (x) {}
     try { screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); } catch (x) {}
@@ -564,7 +589,19 @@
     b.onclick = basculer;
     ref.parentNode.insertBefore(b, ref);
   }
-  poserBouton();
+  function poserGrosBouton() {   // 12/11 : le bouton bien visible, dans la barre du bas (même action que la pilule « PC »)
+    if ($("btnPilote")) return;
+    const pouce = $("pouce");
+    if (!pouce) return;
+    const b = document.createElement("button");
+    b.id = "btnPilote"; b.type = "button"; b.setAttribute("aria-label", "Piloter le PC depuis le téléphone");
+    b.innerHTML = IC.pc;
+    b.onclick = basculer;
+    pouce.appendChild(b);
+    document.documentElement.classList.add("piloteBas");
+  }
+  try { poserBouton(); } catch (x) {}
+  try { poserGrosBouton(); } catch (x) {}
   let pasAppareil = 0;
   setInterval(async () => {   // « stream le gros PC » dit à Nova : l'appli ouverte affiche le PC
     if (actif || document.visibilityState !== "visible" || Date.now() < pasAppareil) return;
