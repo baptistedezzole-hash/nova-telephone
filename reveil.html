@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#02030a">
+<meta name="color-scheme" content="dark">
+<title>Nova se réveille…</title>
+<style>
+  /* Coquille d'appli (agent A) : montré par le service worker quand le PC ne répond pas. Tout est dans ce fichier. */
+  html, body { margin: 0; height: 100%; background: #07041a; color: #f4efff; overflow: hidden;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center;
+    padding: env(safe-area-inset-top) calc(24px + env(safe-area-inset-right)) env(safe-area-inset-bottom) calc(24px + env(safe-area-inset-left));
+    box-sizing: border-box; background: radial-gradient(120% 70% at 50% 42%, #2a1356 0%, #140a33 50%, #07041a 100%); }
+  #ciel { position: fixed; inset: 0; z-index: 0; }
+  .orbe { position: relative; z-index: 1; width: 150px; height: 150px; border-radius: 50%;
+    background: url(icone-masquable-192.png) center / 165% no-repeat, #2a1356;
+    box-shadow: 0 0 50px rgba(150, 80, 255, .55), 0 0 120px rgba(90, 200, 255, .18);
+    animation: souffle 3.2s ease-in-out infinite; }
+  @keyframes souffle { 50% { transform: scale(.94); filter: brightness(.75); box-shadow: 0 0 26px rgba(150, 80, 255, .35); } }
+  h1 { position: relative; z-index: 1; margin: 10px 0 0; font-weight: 300; font-size: 24px; letter-spacing: .04em; }
+  p { position: relative; z-index: 1; margin: 0; max-width: 340px; color: rgba(233, 220, 255, .66); font-size: 15px; line-height: 1.5; }
+  .point::after { content: ""; animation: points 1.6s steps(4) infinite; }
+  @keyframes points { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+  button { position: relative; z-index: 1; margin-top: 8px; padding: 12px 22px; font: inherit; color: #fff; border: 0; border-radius: 999px;
+    background: linear-gradient(135deg, rgba(150, 80, 255, .85), rgba(255, 90, 170, .75)); }
+  @media (prefers-reduced-motion: reduce) { .orbe { animation: none; } }
+</style>
+</head>
+<body>
+<canvas id="ciel"></canvas>
+<div class="orbe" aria-hidden="true"></div>
+<h1>Nova se réveille<span class="point"></span></h1>
+<p id="aide">Le PC ne répond pas encore. Il doit être allumé, avec Nova lancée, et ton téléphone connecté à Internet
+  (4G, 5G ou n'importe quel Wi-Fi).</p>
+<p id="file" style="display:none;position:relative;z-index:1;color:#ffd9a0"></p>
+<button id="re">Réessayer</button>
+<script>
+  // le ciel : quelques étoiles qui scintillent
+  const c = document.getElementById("ciel"), x = c.getContext("2d");
+  let et = [];
+  function taille() {
+    c.width = innerWidth * devicePixelRatio; c.height = innerHeight * devicePixelRatio;
+    et = Array.from({ length: 70 }, () => ({ x: Math.random() * c.width, y: Math.random() * c.height,
+      r: (Math.random() * 1.2 + .4) * devicePixelRatio, p: Math.random() * 6 }));
+  }
+  taille(); addEventListener("resize", taille);
+  (function dessin(t) {
+    x.clearRect(0, 0, c.width, c.height);
+    for (const s of et) {
+      x.globalAlpha = .35 + .45 * (.5 + .5 * Math.sin(t / 900 + s.p));
+      x.fillStyle = "#ece2ff"; x.beginPath(); x.arc(s.x, s.y, s.r, 0, 7); x.fill();
+    }
+    requestAnimationFrame(dessin);
+  })(0);
+  // 2026-11-09 : les messages gardés hors ligne (IndexedDB « nova-sortie », lue seulement, jamais modifiée) sont comptés ici ;
+  // ils partent tout seuls dès que la vraie page s'ouvre (elle les renvoie jusqu'à l'accusé du PC).
+  function compterFile() {
+    try {
+      const r = indexedDB.open("nova-sortie", 1);
+      r.onupgradeneeded = () => { try { r.transaction.abort(); } catch (e) {} };   // base absente : on ne la crée surtout pas
+      r.onerror = () => {};
+      r.onsuccess = () => {
+        try {
+          const q = r.result.transaction("q").objectStore("q").count();
+          q.onsuccess = () => { const n = q.result, el = document.getElementById("file"); r.result.close();
+            if (n) { el.style.display = "block"; el.textContent = "⏳ " + n + (n > 1 ? " messages en attente d'envoi" : " message en attente d'envoi") + " : ils partiront dès que Nova répond."; } };
+        } catch (e) {}
+      };
+    } catch (e) {}
+  }
+  compterFile();
+  // réessaie tout seul : dès que le PC répond, on rouvre Nova
+  let essais = 0;
+  async function essayer() {
+    essais++;
+    try {
+      const r = await fetch("./version.json", { cache: "no-store" });
+      if (r.ok || r.status === 204) { location.replace("./"); return; }
+    } catch (e) {}
+    if (essais % 4 === 0) { location.replace("./"); return; }   // 2026-11-07 partout : l'appli retrouve seule la nouvelle adresse
+    if (essais === 10) document.getElementById("aide").textContent =
+      "Toujours rien. Vérifie que le PC est allumé et que Nova tourne ; je continue d'essayer.";
+    setTimeout(essayer, essais < 10 ? 3000 : 8000);
+  }
+  setTimeout(essayer, 1500);
+  document.getElementById("re").onclick = () => location.replace("./");
+  addEventListener("online", () => essayer());
+</script>
+</body>
+</html>
