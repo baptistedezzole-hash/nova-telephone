@@ -2,8 +2,8 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="bccf9fc1d459ea6d">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="nova-version" content="1e550600a02fbb44">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
 <meta name="color-scheme" content="dark">
@@ -309,6 +309,16 @@ header .esp { flex: 1; }
   padding: 10px 16px; border-radius: 12px; font-size: 13.5px; line-height: 1.4; text-align: center; color: var(--txt); background: rgba(12, 15, 28, .94);
   border: 1px solid var(--bord); opacity: 0; pointer-events: none; transition: opacity .35s, transform .5s var(--ressort); }
 #toast.vu { opacity: 1; transform: translate(-50%, 0); }
+/* 2026-11-12 le clavier ne cache plus rien : en écrivant, la barre colle au-dessus du clavier (--clavier, mesuré en JS)
+   et l'écran se replie au-dessus d'elle (#app remonte, la zone du pouce s'efface) : la dernière réponse de Nova reste visible. */
+#saisie { bottom: max(var(--clavier, 0px), env(keyboard-inset-height, 0px)); }
+html.ecrit #app { bottom: var(--appBas, 0px); }
+html.ecrit #pouce { display: none; }
+html.ecrit #texte { overflow: hidden; min-height: 0; }
+@media (orientation: portrait) { html.ecrit #app { grid-template-rows: auto minmax(0, 1fr) minmax(0, max-content) 0; } }
+html.ecrit #scene { overflow: hidden; }
+html.saisieHaut #saisie { top: calc(var(--st) + 6px); bottom: auto !important; border-top: 0; border-bottom: 1px solid var(--bord); padding-bottom: 10px; }
+html.saisieHaut #app { bottom: 0; padding-top: calc(var(--st) + 70px); }
 
 /* ---------- paysage (téléphone couché) ---------- */
 @media (orientation: landscape) and (max-height: 560px) {
@@ -1682,11 +1692,47 @@ function fermerSaisie() { $("saisie").classList.remove("vu"); $("champ").blur();
 $("btnEcrire").onclick = ouvrirSaisie;
 $("fermerSaisie").onclick = fermerSaisie;
 $("saisie").addEventListener("submit", ev => { ev.preventDefault(); deverrouillerSon(); arreterEcoute(); stopLecture(); envoyer($("champ").value); $("champ").value = ""; fermerSaisie(); });
-if (window.visualViewport) {   // le clavier du téléphone : la zone d'écriture reste juste au-dessus
-  const vv = visualViewport;
-  const suivre = () => { $("saisie").style.bottom = Math.max(0, innerHeight - vv.height - vv.offsetTop) + "px"; posBrouillon(); };
-  vv.addEventListener("resize", suivre); vv.addEventListener("scroll", suivre);
-}
+// 2026-11-12 le clavier du téléphone : la zone d'écriture (et la dernière réponse) restent juste au-dessus.
+// L'appli installée est en plein écran (display fullscreen) : Chrome Android n'y redimensionne pas toujours la page,
+// donc on mesure le clavier nous-mêmes : VirtualKeyboard (Chrome/Android), visualViewport (iPhone, navigateur), sinon
+// la barre monte en haut de l'écran (là, aucun clavier ne peut la cacher).
+(function clavierTelephone() {
+  const html = document.documentElement, saisie = $("saisie"), champ = $("champ"), app = $("app");
+  const vv = window.visualViewport, vk = navigator.virtualKeyboard;
+  const android = /Android/i.test(navigator.userAgent);
+  let hVk = 0, minuteur = 0;
+  try { if (vk) vk.overlaysContent = true; } catch (x) {}
+  const ouverte = () => saisie.classList.contains("vu");
+  const mesurer = () => {
+    let k = 0;
+    if (vk && vk.overlaysContent) k = Math.max(k, hVk);
+    if (vv) k = Math.max(k, innerHeight - vv.height - vv.offsetTop);
+    return k > 40 ? Math.round(k) : 0;
+  };
+  function suivre() {
+    const k = mesurer(), o = ouverte();
+    if (k) html.classList.remove("saisieHaut");
+    saisie.style.bottom = k ? k + "px" : "";   // 0 : la règle CSS (env(keyboard-inset-height)) reste en secours
+    html.style.setProperty("--clavier", k + "px");
+    html.classList.toggle("ecrit", o);
+    html.style.setProperty("--appBas", o && !html.classList.contains("saisieHaut") ? (k + saisie.offsetHeight) + "px" : "0px");
+    if (!o) html.classList.remove("saisieHaut");
+    posBrouillon();
+  }
+  window.novaClavier = { suivre, mesurer };
+  if (vk) vk.addEventListener("geometrychange", ev => { hVk = (ev.target.boundingRect || {}).height || 0; suivre(); });
+  if (vv) { vv.addEventListener("resize", suivre); vv.addEventListener("scroll", suivre); }
+  addEventListener("resize", suivre);
+  champ.addEventListener("focus", () => {
+    suivre(); clearTimeout(minuteur);
+    // aucun clavier mesurable sur Android après 700 ms : la barre passe en haut
+    minuteur = setTimeout(() => { if (android && document.activeElement === champ && !mesurer()) { html.classList.add("saisieHaut"); suivre(); } }, 700);
+    setTimeout(() => { try { champ.scrollIntoView({ block: "nearest" }); } catch (x) {} if (scrollY) scrollTo(0, 0); }, 350);
+  });
+  champ.addEventListener("blur", () => { clearTimeout(minuteur); setTimeout(suivre, 60); });
+  new MutationObserver(suivre).observe(saisie, { attributes: true, attributeFilter: ["class"] });
+  suivre();
+})();
 
 // =====================================================================================================
 // ÉCOUTER : reconnaissance du téléphone, ou audio transcrit par le PC (en talkie : jusqu'à ce qu'on lâche)
