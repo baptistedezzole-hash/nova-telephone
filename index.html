@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="0a184fb5b6c082a5">
+<meta name="nova-version" content="ec6989d10a68ea9e">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -1537,6 +1537,7 @@ const Sortie = (() => {
           if (r && r.ok) { await retirer(it); continue; }
           it.essais = (it.essais || 0) + 1;
           if (it.essais >= 20) { await retirer(it); afficher({ id: "err" + Date.now(), qui: "info", conv: it.conv, texte: (r && r.erreur) || "Message non livré." }); continue; }
+          if (it.essais === 2) toast("Le PC refuse l'image : " + ((r && r.erreur) || "erreur inconnue") + ". Nouvel essai…", 5000);   // 2026-11-12 : plus d'échec muet
           await sauver(it);
           if (local === "attente") { local = ""; reecouter = false; maj(); }
           planifier(5000); return;
@@ -1553,6 +1554,7 @@ const Sortie = (() => {
           if (r && r.ok) { await retirer(it); toast("Image reçue par Nova.", 2200); continue; }
           it.essais = (it.essais || 0) + 1;
           if (it.essais >= 20) { await retirer(it); afficher({ id: "err" + Date.now(), qui: "info", conv: it.conv, texte: (r && r.erreur) || "Image non livrée." }); continue; }
+          if (it.essais === 2) toast("Le PC refuse l'image : " + ((r && r.erreur) || "erreur inconnue") + ". Nouvel essai…", 5000);
           await sauver(it); planifier(5000); return;
         }
         let r;
