@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="b633599c22b72b3c">
+<meta name="nova-version" content="cd5572202bacdc14">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -1824,24 +1824,39 @@ function ouvrirDansChrome() {   // l'appli installée -> un onglet Chrome normal
   try { if (window.NovaAppli && NovaAppli.android) { location.href = intent; return; } } catch (x) {}
   const w = window.open(u.href, "_blank", "noopener"); if (!w) location.href = u.href;
 }
+// 2026-11-12 (3) : le lien ouvert depuis une appli (Messenger, WhatsApp, Gmail, Discord…) ou le navigateur Xiaomi tourne dans un
+// navigateur INTÉGRÉ (WebView) : le micro y est refusé d'office (« permission prompt ») et l'autorisation de Chrome ne compte pas.
+// Chrome envoie un User-Agent réduit (« Android 10; K ») ; une WebView a « ; wv » et/ou le vrai modèle avec « Build/ ».
+function navigateurIntegre() {
+  const ua = navigator.userAgent || "";
+  if (!/Android/i.test(ua)) return "";
+  if (/MiuiBrowser|XiaoMi\//i.test(ua)) return "navigateur Xiaomi";
+  if (/SamsungBrowser/i.test(ua)) return "";
+  if (/FBAN|FBAV|FB_IAB|Messenger|Instagram|WhatsApp|Line\/|Snapchat|TikTok|musical_ly|GSA\/|Discord/i.test(ua)) return "navigateur d'une appli";
+  if (/; wv\)/.test(ua) || /Version\/[\d.]+ Chrome\//.test(ua)) return "navigateur d'une appli";
+  if (/ Build\//.test(ua) && !/EdgA|OPR\/|Firefox|Brave|YaBrowser/i.test(ua)) return "navigateur d'une appli";
+  return "";
+}
 async function expliquerMicro() {
   const e = micErreur, d = micDetail, et = micEtape;
   if (!e) return;
   const st = await etatMicro();
-  const autonome = !!(window.NovaAppli && NovaAppli.autonome);
+  const integre = navigateurIntegre();
+  const autonome = !!(window.NovaAppli && NovaAppli.autonome) || !!integre;
   let t;
   if (!window.isSecureContext) t = "Le micro a besoin de la page en HTTPS.";
   else if (e === "PasDeMediaDevices") t = "Ce navigateur ne donne pas accès au micro.";
   else if (e === "NotFoundError" || e === "OverconstrainedError") t = "Aucun micro trouvé sur le téléphone.";
   else if (e === "NotReadableError" || e === "AbortError" || e === "TrackStartError") t = "Le micro est pris ou n'a pas démarré (appel, dictaphone, autre onglet Nova, « Ok Google »…). Ferme l'autre appli, puis touche le micro.";
   else if (e === "NotAllowedError" || e === "PermissionDeniedError" || e === "SecurityError") {
-    if (/system/i.test(d)) t = "Android bloque le micro de Chrome. Vérifie l'interrupteur « Accès au micro » dans les réglages rapides (en haut de l'écran), et Paramètres Android › Applis › Chrome › Autorisations › Micro.";
+    if (integre) t = "Nova est ouverte dans le " + integre + ", pas dans Chrome : le micro y est bloqué. Touche « Ouvrir dans Chrome » (ou ⋮ › « Ouvrir dans Chrome »), puis autorise le micro.";
+    else if (/system/i.test(d)) t = "Android bloque le micro de Chrome. Vérifie l'interrupteur « Accès au micro » dans les réglages rapides (en haut de l'écran), et Paramètres Android › Applis › Chrome › Autorisations › Micro.";
     else if (/dismiss/i.test(d)) t = "La demande du micro a été fermée sans réponse. Touche le micro et réponds « Autoriser ». Sinon : " + GUIDE_MICRO + " › Autoriser.";
     else if (st === "granted") t = "Chrome dit « autorisé » mais refuse quand même le micro. Vérifie l'interrupteur « Accès au micro » des réglages rapides Android" + (autonome ? ", ou ouvre Nova dans un onglet Chrome." : ".");
     else t = "Le micro est refusé pour Nova. Pour l'autoriser : " + GUIDE_MICRO + " › Autoriser. Puis reviens et touche le micro.";
   }
   else t = "Le micro n'a pas pu s'ouvrir. Touche le micro pour réessayer.";
-  const diag = echapper(e) + (d ? " : " + echapper(d) : "") + (et ? " · étape " + echapper(et) : "") + " · permission " + echapper(st) + " · " + (autonome ? "appli" : "onglet");
+  const diag = echapper(e) + (d ? " : " + echapper(d) : "") + (et ? " · étape " + echapper(et) : "") + " · permission " + echapper(st) + " · " + (integre ? integre : (window.NovaAppli && NovaAppli.autonome) ? "appli" : "onglet Chrome");
   const bouton = autonome ? '<br><button type="button" id="micChrome" style="margin-top:9px;font:inherit;font-weight:600;padding:8px 14px;border-radius:999px;border:1px solid rgba(255,201,138,.45);background:rgba(255,201,138,.14);color:#fff3df">Ouvrir dans Chrome</button>' : "";
   avisMicro = true;
   avis("🎙️ " + t + bouton + '<br><small style="display:block;margin-top:7px;opacity:.62;font-size:11px;line-height:1.3;word-break:break-word">' + diag + "</small>");
