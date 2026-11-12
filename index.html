@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="57a456c957073ed1">
+<meta name="nova-version" content="a22c2f54fdcf9652">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -102,6 +102,23 @@ header .esp { flex: 1; }
 #etat.ecoute { color: rgba(169, 200, 255, .8); } #etat.reflechit { color: rgba(255, 201, 138, .75); }
 #etat.parle { color: rgba(243, 166, 208, .78); } #etat.permission { color: var(--or); }
 #etat.connexion, #etat.erreur { color: rgba(255, 143, 134, .8); }
+/* 2026-11-12 bouton Annuler : une pilule de verre au bas de la scène, visible seulement pendant un envoi, une réflexion ou une réponse */
+#btnAnnuler { position: absolute; z-index: 4; left: 50%; bottom: 6px; display: flex; align-items: center; gap: 9px; height: 46px; min-width: 150px;
+  padding: 0 22px 0 16px; border-radius: 999px; justify-content: center; font-size: 15.5px; font-weight: 520; letter-spacing: .01em; color: #f6ecd3;
+  background: radial-gradient(120% 140% at 50% 0%, rgba(233, 214, 168, .14), rgba(255, 255, 255, .02) 70%), rgba(12, 15, 28, .78);
+  border: 1px solid rgba(233, 214, 168, .34); box-shadow: 0 12px 34px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .07);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  opacity: 0; visibility: hidden; pointer-events: none; transform: translate(-50%, 10px) scale(.96);
+  transition: opacity .3s ease, transform .45s var(--ressort), visibility 0s linear .3s, border-color .3s, color .3s; }
+#btnAnnuler.vu { opacity: 1; visibility: visible; pointer-events: auto; transform: translate(-50%, 0); transition: opacity .3s ease, transform .45s var(--ressort), visibility 0s, border-color .3s, color .3s; }
+#btnAnnuler:active { transform: translate(-50%, 0) scale(.94); background-color: rgba(30, 24, 18, .85); }
+#btnAnnuler b { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; flex: none; color: #1a1408;
+  background: linear-gradient(180deg, #f2e3bc, #d9c18c); box-shadow: 0 0 12px rgba(233, 214, 168, .35); }
+#btnAnnuler b svg { width: 13px; height: 13px; stroke-width: 2.4; }
+#btnAnnuler.fait { opacity: 1; visibility: visible; pointer-events: none; color: #bfe8cf; border-color: rgba(170, 240, 200, .5); transform: translate(-50%, 0);
+  transition: opacity .3s ease, visibility 0s; animation: annuleFait .9s var(--ressort); }
+#btnAnnuler.fait b { background: linear-gradient(180deg, #d6f3e1, #a8e6c0); box-shadow: 0 0 14px rgba(168, 230, 192, .55); }
+@keyframes annuleFait { 0% { transform: translate(-50%, 0) scale(.9); } 45% { transform: translate(-50%, 0) scale(1.06); } 100% { transform: translate(-50%, 0) scale(1); } }
 #agents { position: absolute; left: 0; right: 0; top: 2px; height: 56px; pointer-events: none; }
 .ag { position: absolute; width: 34px; height: 34px; margin-left: -17px; pointer-events: auto; display: grid; place-items: center;
   animation: entre .6s var(--ressort) backwards; }
@@ -418,6 +435,7 @@ html.saisieHaut #app { bottom: 0; padding-top: calc(var(--st) + 70px); }
     <div id="orbe"><canvas id="orbeCv"></canvas></div>
     <div id="etat" class="lbl"></div>
     <div id="chipMic" role="status" aria-live="polite"><i></i><span></span></div>
+    <button id="btnAnnuler" aria-label="Annuler le message"><b><svg class="ic" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></b><span>Annuler</span></button>
   </div>
   <div id="texte">
     <div id="cartes"></div>
@@ -818,6 +836,7 @@ function maj() {
   b.classList.toggle("parle", local === "parle"); b.classList.toggle("attente", local === "attente" || local === "envoi");
   b.classList.toggle("libre", mainsLibres);
   $("aide").textContent = aideTexte(e);
+  majAnnuler(e);
   majChipMic(e);
   $("badge").classList.toggle("vu", nonLues.size > 0 || agentsListe.some(a => a.fini && !vusAgents.has(a.id)));
 }
@@ -1235,7 +1254,7 @@ async function boucle() {
         afficher(e);
         const ec = e.conv || "nova";
         if (ec !== conv) { if (e.qui === "nova" && !e.ancien && !nonLues.has(ec)) { nonLues.add(ec); dessinerConvs(); vib(6); } continue; }
-        if (e.qui === "nova" && !e.ancien && e.seq > sessionSeq && !jouees.has(e.id) && (mainsLibres || e.audio !== null || local === "attente")) {
+        if (e.qui === "nova" && !e.ancien && e.seq > sessionSeq && e.seq > annuleSeq && !(Date.now() < annuleJusqua && local !== "attente") && !jouees.has(e.id) && (mainsLibres || e.audio !== null || local === "attente")) {
           const k = file.findIndex(x => x.id === e.id);
           if (k < 0) { file.push(e); if (ST.id !== e.id && !lecture) { preparerSousTitre(e.id, e.texte, true); toi($("toi").textContent, true); } } else file[k] = e;
           if (local === "attente") { local = ""; }
@@ -1483,7 +1502,18 @@ const Sortie = (() => {
     setTimeout(() => URL.revokeObjectURL(a.href), 20000); toast("Fichier memos-nova.json enregistré.", 3000);
   }
   async function ajouter(it) { it.mid = it.mid || nouvelId(); it.t = it.t || Date.now(); mem.set(it.mid, it); rendre(); await ecrireBd(it); return it; }
-  async function sauver(it) { await ecrireBd(it); }
+  async function sauver(it) { if (it.annule) return; await ecrireBd(it); }
+  // 2026-11-12 bouton Annuler : retire les messages récents (même celui en cours d'envoi) et rend leurs identifiants.
+  // Les mémos plus anciens (gardés pendant une coupure) ne sont pas touchés : ils restent exportables.
+  function annuler(ageMax = 180000) {
+    const now = Date.now(), mids = [];
+    for (const it of trier()) {
+      if (now - (it.t || 0) > ageMax) continue;
+      it.annule = true; mem.delete(it.mid); mids.push(it.mid); ecrireBd(it, true);
+    }
+    clearTimeout(relance); rendre(); return mids;
+  }
+  const recents = (ageMax = 180000) => trier().filter(x => Date.now() - (x.t || 0) <= ageMax).length;
   async function retirer(it) { mem.delete(it.mid); rendre(); await ecrireBd(it, true); }
   function planifier(ms) { clearTimeout(relance); relance = setTimeout(vider, ms); }
   async function vider() {
@@ -1496,6 +1526,7 @@ const Sortie = (() => {
         if (prets.length && !(it && it.kind === "voix" && it.fini && it.avise)) {
           const t = prets.map(x => x.blobs.map(b => b.texte).filter(Boolean).join(" ").trim()).filter(Boolean).join(" ").trim(), manuel = prets.some(x => x.manuel);
           for (const x of prets) await retirer(x);
+          if (prets.some(x => x.annule)) continue;   // annulé pendant ce temps : rien ne part
           if (local === "envoi") local = "";
           if (t) envoyerVoix(t, manuel); else { local = ""; maj(); if (mainsLibres) { reecouter = true; setTimeout(suite, 900); } }
           continue;
@@ -1505,6 +1536,7 @@ const Sortie = (() => {
           for (const bl of it.blobs) {
             if (bl.texte != null) continue;
             let r;
+            if (it.annule) break;
             try { r = await api("/api/transcrire", bl.blob, { delai: 90000 }); }
             catch (x) {
               coupure = !(x && x.jeton); rendre();
@@ -1517,6 +1549,7 @@ const Sortie = (() => {
             if (r && r.erreur && !r.texte) { bl.essais = (bl.essais || 0) + 1; if (bl.essais < 40) { planifier(5000); return; } }
             bl.texte = (r && r.texte) || ""; bl.blob = null; await sauver(it);
           }
+          if (it.annule) continue;
           if (!it.fini) break;   // encore en train de parler : les morceaux déjà finis sont transcrits en avance
           it.pret = true; await sauver(it);   // le tri de tête saute les prêts ; ils partent ensemble au prochain tour de boucle
           continue;
@@ -1534,6 +1567,7 @@ const Sortie = (() => {
             planifier(6000); return;
           }
           coupure = false;
+          if (it.annule) continue;
           if (r && r.ok) { await retirer(it); continue; }
           it.essais = (it.essais || 0) + 1;
           if (it.essais >= 20) { await retirer(it); afficher({ id: "err" + Date.now(), qui: "info", conv: it.conv, texte: (r && r.erreur) || "Message non livré." }); continue; }
@@ -1551,6 +1585,7 @@ const Sortie = (() => {
             planifier(6000); return;
           }
           coupure = false;
+          if (it.annule) continue;
           if (r && r.ok) { await retirer(it); toast("Image reçue par Nova.", 2200); continue; }
           it.essais = (it.essais || 0) + 1;
           if (it.essais >= 20) { await retirer(it); afficher({ id: "err" + Date.now(), qui: "info", conv: it.conv, texte: (r && r.erreur) || "Image non livrée." }); continue; }
@@ -1566,6 +1601,7 @@ const Sortie = (() => {
           planifier(6000); return;
         }
         coupure = false;
+        if (it.annule) continue;
         if (r && r.ok) { await retirer(it); continue; }   // accusé de réception du serveur : la copie locale peut partir
         // le PC a répondu mais n'a pas pu le livrer (Nova pas prête…) : on garde et on réessaie
         it.essais = (it.essais || 0) + 1;
@@ -1586,7 +1622,7 @@ const Sortie = (() => {
   addEventListener("online", () => vider());
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && mem.size) vider(); });
   setInterval(() => { if (mem.size && !occupe) vider(); }, 8000);
-  return { ajouter, sauver, vider, restaurer, nouvelId, rendre, exporter, nb: () => enAttente().length, _mem: mem };
+  return { ajouter, sauver, vider, restaurer, nouvelId, rendre, exporter, annuler, recents, nb: () => enAttente().length, _mem: mem };
 })();
 // ---- 2026-11-07 images : photo / capture -> PC (Documents\Nova\Recu), par la file d'attente (jamais perdue), redimensionnée si énorme ----
 async function reduireImage(f) {
@@ -1660,6 +1696,45 @@ async function envoyer(texte) {
   Sortie.vider();
 }
 addEventListener("load", () => setTimeout(() => Sortie.restaurer(), 1200));
+// =====================================================================================================
+// 2026-11-12 BOUTON ANNULER : pendant un envoi, une réflexion ou une réponse. Retire ce qui attend de partir, coupe la voix ici,
+// et demande au PC d'interrompre le tour de Nova (/api/annuler). Un PC pas encore rechargé répond 404 : l'annulation reste locale.
+// =====================================================================================================
+let annuleSeq = 0, annuleJusqua = 0, annuleFaitT = 0;
+function annulable(e) {
+  try { return annulable2(e); } catch (x) { return false; }   // appelé par maj() avant que tout soit prêt au démarrage
+}
+function annulable2(e) {
+  if (local === "ecoute" || (novaEtat === "permission" && conv === "nova")) return false;
+  if (local === "attente" || local === "envoi" || local === "parle" || lecture || Sortie.recents() > 0) return true;
+  return conv === "nova" && connecte && (e === "envoi" || e === "reflechit" || e === "parle");
+}
+function majAnnuler(e) {
+  const b = $("btnAnnuler"); if (!b || b.classList.contains("fait")) return;
+  b.classList.toggle("vu", annulable(e));
+}
+async function annuler() {
+  const b = $("btnAnnuler");
+  const mids = Sortie.annuler();
+  const avait = { lecture: !!lecture, local };
+  stopLecture();
+  for (const x of file) jouees.add(x.id); file.length = 0;   // les réponses déjà arrivées ne seront pas lues
+  if (ST.id && !ST.fin) finirSousTitre(ST.id);
+  annuleSeq = seq; annuleJusqua = Date.now() + 8000;
+  local = ""; reecouter = false;
+  vib([12, 40, 12]);
+  b.classList.remove("vu"); b.classList.add("fait"); b.lastElementChild.textContent = "Annulé";
+  clearTimeout(annuleFaitT);
+  annuleFaitT = setTimeout(() => { b.classList.remove("fait"); b.lastElementChild.textContent = "Annuler"; maj(); }, 1400);
+  maj();
+  let r = null;
+  try { r = await api("/api/annuler", { mids, conv, tour: conv === "nova" }, { delai: 8000 }); } catch (x) { r = null; }
+  if (r && r.ok && r.seq) annuleSeq = Math.max(annuleSeq, r.seq);
+  const surPc = !!(r && r.ok), coupe = !!(r && r.arrete);
+  toast(coupe ? "Annulé : Nova s'arrête." : surPc ? "Annulé." : (mids.length || avait.lecture ? "Annulé sur le téléphone." : "Annulé."), 2600);
+  if (mainsLibres) { reecouter = true; setTimeout(suite, 900); }
+}
+$("btnAnnuler").onclick = () => { deverrouillerSon(); annuler(); };
 // 2026-11-09 memos : bouton d'export dans les réglages, avec le nombre de mémos en attente
 { const bx = document.getElementById("optExport"); if (bx) bx.onclick = () => Sortie.exporter();
   setInterval(() => { const n = document.getElementById("optExportN"); if (n) { const k = Sortie.nb(); n.textContent = k ? "(" + k + " en attente)" : "(aucun)"; } }, 2000); }
