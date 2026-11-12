@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="cd5572202bacdc14">
+<meta name="nova-version" content="57a456c957073ed1">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -1224,7 +1224,7 @@ async function boucle() {
   for (;;) {
     try {
       const d = await api(`/api/etat?apres=${seq}&attente=${attente}`);
-      if (!connecte) avis("");
+      if (!connecte && !avisMicro) avis("");   // garder l explication du micro (2026-11-12)
       const premier = !connecte; connecte = dejaConnecte = true; attente = 20; seq = d.seq; whisperPC = d.whisper;
       if (novaEtat !== "permission" && d.etat === "permission") { vib([20, 80, 20]); }
       novaEtat = d.etat;

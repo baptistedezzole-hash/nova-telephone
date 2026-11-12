@@ -4,7 +4,7 @@
 //  - ne touche JAMAIS une autre adresse (le PC, la boîte aux lettres, les images) : appli.js s'en occupe.
 // Publié par outils/telephone_pages.py sous le nom « sw.js » (portée = le dossier de l'appli).
 const VERSION = "nova-pages-1";
-const REVISION = "2026-11-12-micro-webview";   // changer cette ligne = les téléphones reprennent la coquille (le cache garde son nom)
+const REVISION = "2026-11-12-micro-webview2";   // changer cette ligne = les téléphones reprennent la coquille (le cache garde son nom)
 const RACINE = new URL("./", self.location.href).pathname;
 const COQUILLE = ["", "index.html", "appli.js", "reveil.html", "video.js", "bureau.js", "manifest.webmanifest",
   "icone-180.png", "icone-192.png", "icone-512.png", "icone-masquable-192.png", "icone-masquable-512.png"].map(f => RACINE + f);
