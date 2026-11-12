@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="1e550600a02fbb44">
+<meta name="nova-version" content="0a184fb5b6c082a5">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -314,6 +314,10 @@ header .esp { flex: 1; }
 #saisie { bottom: max(var(--clavier, 0px), env(keyboard-inset-height, 0px)); }
 html.ecrit #app { bottom: var(--appBas, 0px); }
 html.ecrit #pouce { display: none; }
+/* 2026-11-12 : la ligne d'usage (Claude/GPT) a sa propre place sous l'aide « touche · maintiens… » (elles se chevauchaient) */
+html.aUsage #pouce { padding-bottom: calc(52px + var(--sb)); }
+html.ecrit #usageTel { display: none; }
+@media (orientation: landscape) and (max-height: 560px) { html.aUsage #pouce { padding-bottom: calc(44px + var(--sb)); } }
 html.ecrit #texte { overflow: hidden; min-height: 0; }
 @media (orientation: portrait) { html.ecrit #app { grid-template-rows: auto minmax(0, 1fr) minmax(0, max-content) 0; } }
 html.ecrit #scene { overflow: hidden; }
@@ -1677,6 +1681,7 @@ function majUsage(u) {
     el.style.cssText = "position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 5px);z-index:5;text-align:center;font:600 10.5px/1.3 system-ui,sans-serif;letter-spacing:.02em;color:rgba(214,224,255,.55);pointer-events:none;padding:0 8px";
     document.body.appendChild(el);
   }
+  document.documentElement.classList.add("aUsage");
   const nv = r => r == null ? "" : r < 15 ? "#ff7a7a" : r < 35 ? "#ffc26b" : "#9fe0b4";
   const pc = (lab, r) => r == null ? "" : `${lab} <b style="color:${nv(r)}">${r}%</b>`;
   const bloc = (nom, cle, l1, l2, u2) => {
@@ -1785,7 +1790,7 @@ function ecouterTelephone(id) {
       if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
         if (whisperPC) { moteur = "pc"; avis("La reconnaissance vocale du téléphone est refusée : je passe à la transcription par le PC."); setTimeout(() => avis(""), 6000);
           fini = true; clearInterval(minut); reco = null; local = ""; ecouter(ptt); }
-        else { avis("Le micro est refusé. Autorise-le dans les réglages du navigateur."); finir(false); }
+        else { micErreur = "NotAllowedError"; expliquerMicro(); finir(false); }
       } else if (ev.error === "network" && whisperPC) { moteur = "pc"; fini = true; clearInterval(minut); reco = null; local = ""; ecouter(ptt); }
     };
     r.onend = () => { morceaux = texte; if (!fini && id === ecouteId) setTimeout(lancer, 200); };   // Chrome s'arrête tout seul : on relance
@@ -1802,7 +1807,23 @@ function ecouterTelephone(id) {
 // 2026-11-07 mains libres 2 : le micro est ouvert UNE fois (au 1er toucher) et reste ouvert tant que les mains libres sont allumées ;
 // la détection de voix (VAD) tourne en local sur ce flux, chaque phrase est enregistrée puis transcrite par le PC. Aucun geste
 // n'est plus nécessaire pour réécouter (contrairement à webkitSpeechRecognition qui exige un toucher à chaque démarrage sur Chrome Android).
-let micFlux = null, micCtx = null, micAn = null, micOuvre = null;
+let micFlux = null, micCtx = null, micAn = null, micOuvre = null, micErreur = "";
+// 2026-11-12 : un vrai message selon la VRAIE cause (avant, toute erreur disait « refusé » : micro pris par une autre appli, demande fermée…)
+const GUIDE_MICRO = "🎙️ Le micro est bloqué pour Nova. Pour l'autoriser : <b>appui long sur l'icône Nova</b> › <b>Infos sur l'appli</b> › <b>Autorisations</b> › <b>Micro</b> › <b>Autoriser</b>. Puis reviens et touche le micro.";
+let avisMicro = false;
+async function etatMicro() { try { return (await navigator.permissions.query({ name: "microphone" })).state; } catch (x) { return "?"; } }
+async function expliquerMicro() {
+  if (!window.isSecureContext) { avisMicro = true; avis("Le micro a besoin de la page en HTTPS."); return; }
+  const e = micErreur, st = await etatMicro();
+  let t;
+  if (e === "NotFoundError" || e === "OverconstrainedError") t = "Aucun micro trouvé sur le téléphone.";
+  else if (e === "NotReadableError" || e === "AbortError") t = "Le micro est pris par une autre appli (appel, dictaphone, autre onglet Nova…). Ferme-la, puis touche le micro.";
+  else if (st === "denied") t = GUIDE_MICRO;
+  else if (e === "NotAllowedError" || e === "SecurityError") t = "La demande du micro a été fermée. <b>Touche le bouton micro</b> : Chrome te la redemande, réponds « Autoriser ».<br><small>Si elle ne revient pas : " + GUIDE_MICRO.replace(/^🎙️ Le micro est bloqué pour Nova\. Pour l'autoriser : /, "") + "</small>";
+  else t = "Le micro n'a pas pu s'ouvrir" + (e ? " (" + e + ")" : "") + ". Touche le micro pour réessayer.";
+  avisMicro = true; avis(t);
+}
+try { navigator.permissions.query({ name: "microphone" }).then(p => { p.onchange = () => { if (p.state === "granted" && avisMicro) { avisMicro = false; avis(""); } else if (p.state === "denied") { micErreur = "NotAllowedError"; expliquerMicro(); } }; }).catch(() => {}); } catch (x) {}
 const micOuvert = () => !!(micFlux && micFlux.getAudioTracks().some(t => t.readyState === "live"));
 function ouvrirMicro() {
   if (micOuvert()) { try { if (micCtx && micCtx.state !== "running") micCtx.resume(); } catch (x) {} return Promise.resolve(micFlux); }
@@ -1815,8 +1836,9 @@ function ouvrirMicro() {
       micCtx.createMediaStreamSource(f).connect(micAn);
       try { await micCtx.resume(); } catch (x) {}
       f.getAudioTracks().forEach(t => { t.onended = () => { maj(); if (mainsLibres && document.visibilityState === "visible") setTimeout(() => ouvrirMicro().then(() => { if (mainsLibres && !local && !lecture) { reecouter = true; suite(); } }), 800); }; });
+      micErreur = ""; if (avisMicro) { avisMicro = false; avis(""); }
       maj(); return f;
-    } catch (x) { return null; }
+    } catch (x) { micErreur = (x && x.name) || "Error"; return null; }
     finally { micOuvre = null; }
   })();
   return micOuvre;
@@ -1864,7 +1886,7 @@ async function ecouterPC(id, utt = null, calme = false) {
   if (!window.MediaRecorder && SR) { return ecouterTelephone(id); }
   const manuel = ptt || !mainsLibres;
   const flux = await ouvrirMicro();
-  if (!flux) { avis(window.isSecureContext ? "Le micro est refusé. Autorise-le dans les réglages du navigateur." : "Le micro a besoin de la page en HTTPS."); local = ""; ptt = false; maj(); return; }
+  if (!flux) { expliquerMicro(); local = ""; ptt = false; maj(); return; }
   if (id !== ecouteId) { if (!mainsLibres) fermerMicro(); return; }
   micActif(true);
   const types = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm", "audio/ogg;codecs=opus"];
@@ -1966,6 +1988,7 @@ function toucheSimple() {   // ce que fait UNE touche, selon le moment
     bas = true; annule = false; enTalkie = false; x0 = ev.clientX; y0 = ev.clientY; b.classList.add("appui");
     try { b.setPointerCapture(ev.pointerId); } catch (x) {}
     deverrouillerSon();
+    if (window.MediaRecorder && !micOuvert()) ouvrirMicro().then(f => { if (!f) expliquerMicro(); });   // dans le geste : la vraie demande de Chrome
     clearTimeout(tLong);
     tLong = setTimeout(() => {   // maintenu : talkie
       if (!bas || annule) return; enTalkie = true; clearTimeout(tapAttente); tapAttente = 0;
@@ -1998,6 +2021,7 @@ $("btnLibre").onclick = () => { vib(10); if (mainsLibres) arreterMainsLibres(); 
 if (lire("nova-libre", "1") !== "0") {
   const premier = (ev) => {
     removeEventListener("pointerup", premier, true);
+    if (window.MediaRecorder && !micOuvert() && !(ev.target && ev.target.closest && ev.target.closest("#saisie"))) ouvrirMicro();   // 2026-11-12 : getUserMedia DANS le 1er toucher
     if (ev.target && ev.target.closest && ev.target.closest("#btnLibre, #parler, #orbe")) { if (!mainsLibres && !ev.target.closest("#btnLibre")) setTimeout(() => { if (!mainsLibres) demarrerMainsLibres(); }, 500); return; }
     if (!mainsLibres) demarrerMainsLibres();
   };
@@ -2005,6 +2029,12 @@ if (lire("nova-libre", "1") !== "0") {
   setTimeout(() => { if (!mainsLibres) avis("Touche l'écran une fois : les mains libres démarrent."); }, 1500);
 }
 setInterval(majBtnLibre, 500);
+// 2026-11-12 : « Touche l'écran pour activer le micro » le fait vraiment (getUserMedia dans le geste = vraie demande de Chrome)
+addEventListener("pointerup", ev => {
+  if (!mainsLibres || micOuvert() || micOuvre || !window.MediaRecorder) return;
+  if (ev.target && ev.target.closest && ev.target.closest("#saisie, #parler, #btnLibre, input, textarea, button, a")) return;
+  ouvrirMicro().then(f => { if (!f) { expliquerMicro(); return; } maj(); if (mainsLibres && !local && !lecture) { reecouter = true; suite(); } });
+}, true);
 window.novaCalme = () => !local && !lecture && !file.length && !tapAttente;   // pour la mise à jour automatique (appli.js)
 $("orbe").addEventListener("click", () => { vib(8); toucheSimple(); });   // l'orbe aussi : parler / couper la parole / envoyer
 $("permOui").onclick = () => { vib(10); api("/api/permission", { accepter: true }).catch(() => {}); };
