@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="ec6989d10a68ea9e">
+<meta name="nova-version" content="75da24280712f2a4">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -1792,7 +1792,7 @@ function ecouterTelephone(id) {
       if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
         if (whisperPC) { moteur = "pc"; avis("La reconnaissance vocale du téléphone est refusée : je passe à la transcription par le PC."); setTimeout(() => avis(""), 6000);
           fini = true; clearInterval(minut); reco = null; local = ""; ecouter(ptt); }
-        else { micErreur = "NotAllowedError"; expliquerMicro(); finir(false); }
+        else { micErreur = "NotAllowedError"; micDetail = "reconnaissance vocale : " + ev.error; micEtape = "SpeechRecognition"; expliquerMicro(); finir(false); }
       } else if (ev.error === "network" && whisperPC) { moteur = "pc"; fini = true; clearInterval(minut); reco = null; local = ""; ecouter(ptt); }
     };
     r.onend = () => { morceaux = texte; if (!fini && id === ecouteId) setTimeout(lancer, 200); };   // Chrome s'arrête tout seul : on relance
@@ -1809,40 +1809,75 @@ function ecouterTelephone(id) {
 // 2026-11-07 mains libres 2 : le micro est ouvert UNE fois (au 1er toucher) et reste ouvert tant que les mains libres sont allumées ;
 // la détection de voix (VAD) tourne en local sur ce flux, chaque phrase est enregistrée puis transcrite par le PC. Aucun geste
 // n'est plus nécessaire pour réécouter (contrairement à webkitSpeechRecognition qui exige un toucher à chaque démarrage sur Chrome Android).
-let micFlux = null, micCtx = null, micAn = null, micOuvre = null, micErreur = "";
-// 2026-11-12 : un vrai message selon la VRAIE cause (avant, toute erreur disait « refusé » : micro pris par une autre appli, demande fermée…)
-const GUIDE_MICRO = "🎙️ Le micro est bloqué pour Nova. Pour l'autoriser : <b>appui long sur l'icône Nova</b> › <b>Infos sur l'appli</b> › <b>Autorisations</b> › <b>Micro</b> › <b>Autoriser</b>. Puis reviens et touche le micro.";
+let micFlux = null, micCtx = null, micAn = null, micOuvre = null, micErreur = "", micDetail = "", micEtape = "";
+// 2026-11-12 (2) micro : getUserMedia est appelé EN DIRECT (synchrone) dans le geste, à CHAQUE toucher tant que le micro n'est pas ouvert ;
+// aucun refus n'est mémorisé (ni drapeau, ni état de permission : le permissions.query ne sert qu'à l'affichage du diagnostic).
+// Le bandeau écrit l'erreur EXACTE (name + message + étape + état de la permission + appli/onglet), en petit, pour diagnostiquer.
+const GUIDE_MICRO = "<b>Chrome</b> › <b>⋮</b> › <b>Paramètres</b> › <b>Paramètres des sites</b> › <b>Micro</b>";
 let avisMicro = false;
 async function etatMicro() { try { return (await navigator.permissions.query({ name: "microphone" })).state; } catch (x) { return "?"; } }
-async function expliquerMicro() {
-  if (!window.isSecureContext) { avisMicro = true; avis("Le micro a besoin de la page en HTTPS."); return; }
-  const e = micErreur, st = await etatMicro();
-  let t;
-  if (e === "NotFoundError" || e === "OverconstrainedError") t = "Aucun micro trouvé sur le téléphone.";
-  else if (e === "NotReadableError" || e === "AbortError") t = "Le micro est pris par une autre appli (appel, dictaphone, autre onglet Nova…). Ferme-la, puis touche le micro.";
-  else if (st === "denied") t = GUIDE_MICRO;
-  else if (e === "NotAllowedError" || e === "SecurityError") t = "La demande du micro a été fermée. <b>Touche le bouton micro</b> : Chrome te la redemande, réponds « Autoriser ».<br><small>Si elle ne revient pas : " + GUIDE_MICRO.replace(/^🎙️ Le micro est bloqué pour Nova\. Pour l'autoriser : /, "") + "</small>";
-  else t = "Le micro n'a pas pu s'ouvrir" + (e ? " (" + e + ")" : "") + ". Touche le micro pour réessayer.";
-  avisMicro = true; avis(t);
+const echapper = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const ADRESSE_APPLI = () => (window.NovaAppli && NovaAppli.adresseFixe) || (location.origin + location.pathname);
+function ouvrirDansChrome() {   // l'appli installée -> un onglet Chrome normal (même adresse, même stockage, même jeton d'appareil)
+  const u = new URL(ADRESSE_APPLI());
+  const intent = "intent://" + u.host + u.pathname + "#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=" + encodeURIComponent(u.href) + ";end";
+  try { if (window.NovaAppli && NovaAppli.android) { location.href = intent; return; } } catch (x) {}
+  const w = window.open(u.href, "_blank", "noopener"); if (!w) location.href = u.href;
 }
-try { navigator.permissions.query({ name: "microphone" }).then(p => { p.onchange = () => { if (p.state === "granted" && avisMicro) { avisMicro = false; avis(""); } else if (p.state === "denied") { micErreur = "NotAllowedError"; expliquerMicro(); } }; }).catch(() => {}); } catch (x) {}
+async function expliquerMicro() {
+  const e = micErreur, d = micDetail, et = micEtape;
+  if (!e) return;
+  const st = await etatMicro();
+  const autonome = !!(window.NovaAppli && NovaAppli.autonome);
+  let t;
+  if (!window.isSecureContext) t = "Le micro a besoin de la page en HTTPS.";
+  else if (e === "PasDeMediaDevices") t = "Ce navigateur ne donne pas accès au micro.";
+  else if (e === "NotFoundError" || e === "OverconstrainedError") t = "Aucun micro trouvé sur le téléphone.";
+  else if (e === "NotReadableError" || e === "AbortError" || e === "TrackStartError") t = "Le micro est pris ou n'a pas démarré (appel, dictaphone, autre onglet Nova, « Ok Google »…). Ferme l'autre appli, puis touche le micro.";
+  else if (e === "NotAllowedError" || e === "PermissionDeniedError" || e === "SecurityError") {
+    if (/system/i.test(d)) t = "Android bloque le micro de Chrome. Vérifie l'interrupteur « Accès au micro » dans les réglages rapides (en haut de l'écran), et Paramètres Android › Applis › Chrome › Autorisations › Micro.";
+    else if (/dismiss/i.test(d)) t = "La demande du micro a été fermée sans réponse. Touche le micro et réponds « Autoriser ». Sinon : " + GUIDE_MICRO + " › Autoriser.";
+    else if (st === "granted") t = "Chrome dit « autorisé » mais refuse quand même le micro. Vérifie l'interrupteur « Accès au micro » des réglages rapides Android" + (autonome ? ", ou ouvre Nova dans un onglet Chrome." : ".");
+    else t = "Le micro est refusé pour Nova. Pour l'autoriser : " + GUIDE_MICRO + " › Autoriser. Puis reviens et touche le micro.";
+  }
+  else t = "Le micro n'a pas pu s'ouvrir. Touche le micro pour réessayer.";
+  const diag = echapper(e) + (d ? " : " + echapper(d) : "") + (et ? " · étape " + echapper(et) : "") + " · permission " + echapper(st) + " · " + (autonome ? "appli" : "onglet");
+  const bouton = autonome ? '<br><button type="button" id="micChrome" style="margin-top:9px;font:inherit;font-weight:600;padding:8px 14px;border-radius:999px;border:1px solid rgba(255,201,138,.45);background:rgba(255,201,138,.14);color:#fff3df">Ouvrir dans Chrome</button>' : "";
+  avisMicro = true;
+  avis("🎙️ " + t + bouton + '<br><small style="display:block;margin-top:7px;opacity:.62;font-size:11px;line-height:1.3;word-break:break-word">' + diag + "</small>");
+  const b = document.getElementById("micChrome"); if (b) b.onclick = ev => { ev.stopPropagation(); ouvrirDansChrome(); };
+}
+try { navigator.permissions.query({ name: "microphone" }).then(p => { p.onchange = () => { if (p.state === "granted" && avisMicro && !micErreur) { avisMicro = false; avis(""); } }; }).catch(() => {}); } catch (x) {}
 const micOuvert = () => !!(micFlux && micFlux.getAudioTracks().some(t => t.readyState === "live"));
+const MIC_OPTIONS = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } };
+function noterErreurMicro(x, etape) { micErreur = (x && x.name) || "Error"; micDetail = (x && x.message) || String(x || ""); micEtape = etape; try { console.warn("[Nova micro]", etape, micErreur, micDetail); } catch (y) {} }
+async function brancherMicro(f) {   // le flux est là : l'analyseur pour la détection de voix (une erreur ici n'est PAS un refus du micro)
+  fermerMicro();
+  micFlux = f;
+  try {
+    micCtx = new (window.AudioContext || window.webkitAudioContext)(); micAn = micCtx.createAnalyser(); micAn.fftSize = 1024;
+    micCtx.createMediaStreamSource(f).connect(micAn);
+    try { await micCtx.resume(); } catch (x) {}
+  } catch (x) { noterErreurMicro(x, "analyse du son"); fermerMicro(); return null; }
+  f.getAudioTracks().forEach(t => { t.onended = () => { maj(); if (mainsLibres && document.visibilityState === "visible") setTimeout(() => ouvrirMicro().then(() => { if (mainsLibres && !local && !lecture) { reecouter = true; suite(); } }), 800); }; });
+  micErreur = ""; micDetail = ""; micEtape = ""; if (avisMicro) { avisMicro = false; avis(""); }
+  maj(); return f;
+}
+// À appeler DIRECTEMENT dans le gestionnaire du toucher : getUserMedia part tout de suite, avant tout await.
 function ouvrirMicro() {
   if (micOuvert()) { try { if (micCtx && micCtx.state !== "running") micCtx.resume(); } catch (x) {} return Promise.resolve(micFlux); }
   if (micOuvre) return micOuvre;
-  micOuvre = (async () => {
-    try {
-      const f = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-      fermerMicro();
-      micFlux = f; micCtx = new (window.AudioContext || window.webkitAudioContext)(); micAn = micCtx.createAnalyser(); micAn.fftSize = 1024;
-      micCtx.createMediaStreamSource(f).connect(micAn);
-      try { await micCtx.resume(); } catch (x) {}
-      f.getAudioTracks().forEach(t => { t.onended = () => { maj(); if (mainsLibres && document.visibilityState === "visible") setTimeout(() => ouvrirMicro().then(() => { if (mainsLibres && !local && !lecture) { reecouter = true; suite(); } }), 800); }; });
-      micErreur = ""; if (avisMicro) { avisMicro = false; avis(""); }
-      maj(); return f;
-    } catch (x) { micErreur = (x && x.name) || "Error"; return null; }
-    finally { micOuvre = null; }
-  })();
+  let p;
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw Object.assign(new Error(window.isSecureContext ? "navigator.mediaDevices absent" : "page pas en https"), { name: "PasDeMediaDevices" });
+    p = navigator.mediaDevices.getUserMedia(MIC_OPTIONS);   // synchrone, dans le geste
+  } catch (x) { noterErreurMicro(x, "appel"); return Promise.resolve(null); }
+  micOuvre = p.catch(x => {
+    noterErreurMicro(x, "getUserMedia");
+    // 2e essai tout simple ({audio:true}) : certains téléphones refusent les options de traitement du son
+    if (x && (x.name === "NotFoundError" || x.name === "PasDeMediaDevices")) return null;
+    return navigator.mediaDevices.getUserMedia({ audio: true }).catch(y => { noterErreurMicro(y, "getUserMedia simple (1er : " + ((x && x.name) || "?") + ")"); return null; });
+  }).then(f => f ? brancherMicro(f) : null).finally(() => { micOuvre = null; });
   return micOuvre;
 }
 function fermerMicro() {
@@ -1990,7 +2025,7 @@ function toucheSimple() {   // ce que fait UNE touche, selon le moment
     bas = true; annule = false; enTalkie = false; x0 = ev.clientX; y0 = ev.clientY; b.classList.add("appui");
     try { b.setPointerCapture(ev.pointerId); } catch (x) {}
     deverrouillerSon();
-    if (window.MediaRecorder && !micOuvert()) ouvrirMicro().then(f => { if (!f) expliquerMicro(); });   // dans le geste : la vraie demande de Chrome
+    if (window.MediaRecorder && !micOuvert()) ouvrirMicro().then(f => { if (!f) expliquerMicro(); });   // dans le geste (synchrone) : la vraie demande de Chrome
     clearTimeout(tLong);
     tLong = setTimeout(() => {   // maintenu : talkie
       if (!bas || annule) return; enTalkie = true; clearTimeout(tapAttente); tapAttente = 0;
@@ -2003,6 +2038,8 @@ function toucheSimple() {   // ce que fait UNE touche, selon le moment
   });
   const relache = (ev) => {
     if (!bas) return; bas = false; clearTimeout(tLong); b.classList.remove("appui");
+    // 2026-11-12 (2) : au toucher, le pointerdown ne compte pas comme « geste » pour Chrome ; le pointerup, si. Micro pas ouvert = on redemande ICI, en direct.
+    if (window.MediaRecorder && !micOuvert() && !micOuvre) ouvrirMicro().then(f => { if (!f) expliquerMicro(); });
     if (annule) return;
     if (enTalkie) { enTalkie = false; vib(8); if (ecouteFinir) ecouteFinir(true); else if (local === "ecoute") arreterEcoute(); ptt = false; maj(); return; }
     const now = Date.now();
