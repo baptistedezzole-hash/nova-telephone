@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="8a8f86d471ce6361">
+<meta name="nova-version" content="6a0327c8ce366d29">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -344,6 +344,7 @@ header .esp { flex: 1; }
 #saisie button { flex: none; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; }
 #envoyer { color: #1a1408; background: linear-gradient(180deg, #f2e3bc, #d9c18c); }
 #fermerSaisie { color: var(--txt2); }
+#dicterSaisie { color: var(--txt2); background: rgba(255, 255, 255, .05); border: 1px solid var(--bord); }
 
 #toast { position: fixed; z-index: 12; left: 50%; top: calc(var(--st) + 58px); max-width: calc(100vw - 48px); transform: translate(-50%, -8px);
   padding: 10px 16px; border-radius: 12px; font-size: 13.5px; line-height: 1.4; text-align: center; color: var(--txt); background: rgba(12, 15, 28, .94);
@@ -527,6 +528,7 @@ html.saisieHaut #app { bottom: 0; padding-top: calc(var(--st) + 70px); }
 <form id="saisie" autocomplete="off">
   <button type="button" id="fermerSaisie" aria-label="Fermer"><svg class="ic" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
   <input id="champ" type="text" maxlength="4000" placeholder="Écrire à Nova…" enterkeyhint="send">
+  <button type="button" id="dicterSaisie" aria-label="Dicter à Nova"><svg class="ic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
   <button type="submit" id="envoyer" aria-label="Envoyer"><svg class="ic" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
 </form>
 <div id="toast"></div>
@@ -646,7 +648,7 @@ const TEINTE = { repos: "rgba(255,230,190,.07)", ecoute: "rgba(120,160,255,.10)"
 const CLES = ["core", "surf", "cor", "acc"], NUMS = ["R", "en", "spd", "spk", "asp", "think", "perm", "flick"];
 let orbeEtat = "demarrage", cible = PAL.demarrage, courant = {};
 for (const k of CLES) courant[k] = cible[k].slice(); for (const k of NUMS) courant[k] = cible[k] || 0;
-let voixFort = 0, niveauMicro = 0, flash = 0, vt = 0, ondes = [], dernierPic = 0, dernierBalise = 0;
+let voixFort = 0, niveauMicro = 0, flash = 0, vt = 0, souffleA = 0, ondes = [], dernierPic = 0, dernierBalise = 0;
 function montrer(e) {
   if (!PAL[e]) e = "repos";
   if (e === orbeEtat) return;
@@ -847,17 +849,22 @@ void main(){
   let N = mem >= 6 && coeurs >= 8 ? 6000 : mem >= 4 && coeurs >= 6 ? 4200 : mem >= 3 ? 3000 : 1800;
   if (REDUIT) N = 1200;
   const NE = 46;   // les étincelles du PC
-  let P, Q, bufQ, bufP, actifs = N;
+  let P, Q, bufQ, bufP, texB, actifs = N;
   function construire() {
     P = prog(PLASMA_VS, PLASMA_FS); Q = prog(PART_VS, PART_FS);
+    texB = texBruit();
     bufQ = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bufQ);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
     const tot = N + NE, d = new Float32Array(tot * 5);
     let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    // 2026-11-14 : l'ordre des points de Fibonacci est mélangé : si l'appareil peine et qu'on en dessine moins,
+    // les points retirés sont pris partout (avant : tout le bas de la coque disparaissait d'un coup)
+    const ordre = new Uint32Array(N); for (let i = 0; i < N; i++) ordre[i] = i;
+    for (let i = N - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)), x = ordre[i]; ordre[i] = ordre[j]; ordre[j] = x; }
     for (let i = 0; i < tot; i++) {
-      const e = i >= N, j = i * 5;
-      d[j] = e ? rnd() : (i + .5) / N;                       // sphère de Fibonacci (répartition régulière)
-      d[j + 1] = e ? rnd() : (i * .618034) % 1;
+      const e = i >= N, j = i * 5, f = e ? 0 : ordre[i];
+      d[j] = e ? rnd() : (f + .5) / N;                       // sphère de Fibonacci (répartition régulière)
+      d[j + 1] = e ? rnd() : (f * .618034) % 1;
       d[j + 2] = rnd(); d[j + 3] = rnd(); d[j + 4] = e ? 1 : 0;
     }
     bufP = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bufP); gl.bufferData(gl.ARRAY_BUFFER, d, gl.STATIC_DRAW);
@@ -871,7 +878,10 @@ void main(){
     const w = Math.round(cv.clientWidth * Math.min(1.75, window.devicePixelRatio || 1));
     if (w && cv.width !== w) { cv.width = cv.height = w; gl.viewport(0, 0, w, w); }
   };
-  let tt = 0, mesureT = 0, mesureN = 0, lent = 0;
+  // tout ce qui bouge est INTÉGRÉ image par image (jamais « temps × vitesse qui change ») : aucun saut quand l'état change
+  let tt = 0, te = 0, mesureT = 0, mesureN = 0, lent = 0, parleU = 0, voixU = 0;
+  const O = new Float32Array(8), ring = cur.c.slice(), AMBRE = [1, .62, .28], BLANC = [1, 1, 1];
+  const VO = [.035, .022, .05, -.034, -.03, .047];   // vitesses des décalages du bruit (contour, plasma)
   o.dessiner = (now, dt, vac, souffle) => {
     if (perdu || !cv.width) return;
     const e = ET[orbeEtat] || ET.repos, k = 1 - Math.pow(.02, dt);
@@ -882,19 +892,28 @@ void main(){
     mode.pe += ((orbeEtat === "reflechit" ? 1 : 0) - mode.pe) * km;
     mode.pa += ((orbeEtat === "parle" ? 1 : 0) - mode.pa) * km;
     mode.nv += ((orbeEtat === "envoi" ? 1 : 0) - mode.nv) * (1 - Math.pow(.002, dt));
-    tt += dt * cur.vi * (REDUIT ? .25 : 1);
+    const vit = dt * cur.vi * (REDUIT ? .25 : 1);
+    tt += vit; te += vit * (1 + 1.2 * mode.pe);
+    for (let i = 0; i < 6; i++) { O[i] += vit * VO[i]; O[i] -= Math.floor(O[i]); }
+    O[6] += dt * (.05 + .16 * voixFort * mode.pa); O[7] += dt * (.035 + .11 * voixFort * mode.pa);   // la vibration du contour (parole)
+    O[6] -= Math.floor(O[6]); O[7] -= Math.floor(O[7]);
+    parleU += (mode.pa * (.6 + .4 * voixFort) - parleU) * (1 - Math.pow(.01, dt));
+    voixU += (voixFort * mode.pa - voixU) * (1 - Math.pow(.004, dt));
     const rayon = (cur.ta + souffle) * ECH * .62;
     gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.enable(gl.BLEND);
-    // 1) le plasma (comme sur le PC)
+    // 1) le plasma
     gl.useProgram(P.p); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texB);
     gl.bindBuffer(gl.ARRAY_BUFFER, bufQ); gl.enableVertexAttribArray(locP); gl.vertexAttribPointer(locP, 2, gl.FLOAT, false, 0, 0);
-    const u = P.u, parle = orbeEtat === "parle" ? Math.min(1, .55 + voixFort * .5) : mode.pa * .5;
-    gl.uniform1f(u.t, tt); gl.uniform1f(u.taille, (cur.ta + souffle) * ECH); gl.uniform1f(u.energie, cur.en + .15 * voixFort);
-    gl.uniform1f(u.parle, parle); gl.uniform1f(u.flash, flash); gl.uniform1f(u.vis, vac);
+    const u = P.u;
+    gl.uniform1i(u.T, 0);
+    gl.uniform1f(u.taille, (cur.ta + souffle) * ECH); gl.uniform1f(u.energie, cur.en + .12 * voixU);
+    gl.uniform1f(u.parle, parleU); gl.uniform1f(u.voix, voixU); gl.uniform1f(u.flash, flash); gl.uniform1f(u.vis, vac);
+    gl.uniform2f(u.o1, O[0], O[1]); gl.uniform2f(u.o2, O[2], O[3]); gl.uniform2f(u.o3, O[4], O[5]); gl.uniform2f(u.o4, O[6], O[7]);
     gl.uniform3fv(u.c1, cur.c1); gl.uniform3fv(u.c2, cur.c2);
-    for (let i = ondes.length - 1; i >= 0; i--) if (now - ondes[i].t0 >= ondes[i].d) ondes.splice(i, 1);
-    const od = ondes[ondes.length - 1], oq = od ? Math.min(1, (now - od.t0) / od.d) : 1;
-    gl.uniform1f(u.ondeQ, oq); gl.uniform1f(u.ondeA, od ? .9 : 0); gl.uniform3fv(u.ondeC, od ? od.c : [1, 1, 1]);
+    for (let i = ondes.length - 1; i >= 0; i--) { if (now - ondes[i].t0 >= ondes[i].d) ondes.splice(i, 1); }
+    const od = ondes.length ? ondes[ondes.length - 1] : null, oq = od ? Math.min(1, (now - od.t0) / od.d) : 1;
+    gl.uniform1f(u.ondeQ, oq); gl.uniform1f(u.ondeA, od ? .9 : 0); gl.uniform3fv(u.ondeC, od ? od.c : BLANC);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.disableVertexAttribArray(locP);
     // 2) les particules, en lumière additive
@@ -903,22 +922,22 @@ void main(){
     gl.enableVertexAttribArray(locG); gl.vertexAttribPointer(locG, 4, gl.FLOAT, false, 20, 0);
     gl.enableVertexAttribArray(locK); gl.vertexAttribPointer(locK, 1, gl.FLOAT, false, 20, 16);
     const v = Q.u;
-    gl.uniform1f(v.t, tt); gl.uniform1f(v.rayon, rayon);
+    gl.uniform1f(v.t, tt); gl.uniform1f(v.te, te); gl.uniform1f(v.rayon, rayon);
     gl.uniform1f(v.ec, mode.ec); gl.uniform1f(v.pe, mode.pe); gl.uniform1f(v.pa, mode.pa); gl.uniform1f(v.nv, mode.nv);
-    gl.uniform1f(v.voix, voixFort); gl.uniform1f(v.micro, niveauMicro);
+    gl.uniform1f(v.voix, voixU); gl.uniform1f(v.micro, niveauMicro);
     gl.uniform1f(v.dpr, cv.width / Math.max(1, cv.clientWidth)); gl.uniform1f(v.base, Math.max(.7, Math.min(1.25, cv.clientWidth / 520)));
     gl.uniform1f(v.vis, vac * (.75 + .5 * cur.en)); gl.uniform1f(v.fuite, 1);
-    const ring = orbeEtat === "ecoute" && ptt ? [1, .62, .28] : cur.c;   // talkie : anneau ambre, comme sur le PC
+    const rc = orbeEtat === "ecoute" && ptt ? AMBRE : cur.c;   // talkie : anneau ambre, comme sur le PC (en fondu)
+    for (let i = 0; i < 3; i++) ring[i] += (rc[i] - ring[i]) * k;
     gl.uniform3fv(v.ca, cur.a); gl.uniform3fv(v.cb, cur.b); gl.uniform3fv(v.cc, ring);
     gl.drawArrays(gl.POINTS, 0, actifs);                          // la poussière (peut être réduite si l'appareil peine)
     gl.drawArrays(gl.POINTS, N, NE);                              // les étincelles
     gl.disableVertexAttribArray(locG); gl.disableVertexAttribArray(locK);
-    // l'appareil peine (plus de 24 ms par image pendant 2 s) : moins de particules, jamais moins de 900
+    // l'appareil peine vraiment (plus de 30 ms par image pendant 2 × 2 s) : un peu moins de particules, jamais moins de 1200
     mesureT += dt; mesureN++;
     if (mesureT > 2) {
       const moy = mesureT / mesureN; mesureT = mesureN = 0;
-      const calme = orbeEtat === "repos" || orbeEtat === "demarrage";
-      if (moy > (calme ? .045 : .024)) { if (++lent >= 2) { actifs = Math.max(900, Math.round(actifs * .7)); lent = 0; } } else lent = 0;
+      if (moy > .03) { if (++lent >= 2) { actifs = Math.max(Math.min(N, 1200), Math.round(actifs * .82)); lent = 0; } } else lent = 0;
     }
   };
   o.ok = true; cv.hidden = false; ov.hidden = true;
@@ -936,12 +955,13 @@ function dessinerOrbe(now, dt) {
   if (orbeEtat === "parle") { const t = now / 1000; v = .45 + .3 * Math.abs(Math.sin(t * 7.1)) * (.6 + .4 * Math.sin(t * 2.3)) + .2 * Math.max(0, Math.sin(t * 13.7)); }
   else if (orbeEtat === "ecoute") v = niveauMicro;
   voixFort += (v - voixFort) * (1 - Math.pow(.002, dt));
-  if (orbeEtat === "parle" && voixFort > .78 && now - dernierPic > 700) { dernierPic = now; ondes.push({ t0: now, d: 1400, c: s.acc.slice() }); }
+  if (!orbeGl.ok && orbeEtat === "parle" && voixFort > .78 && now - dernierPic > 700) { dernierPic = now; ondes.push({ t0: now, d: 1400, c: s.acc.slice() }); }
   if (s.perm > .5 && now - dernierBalise > 1500) { dernierBalise = now; ondes.push({ t0: now, d: 1500, c: [1, .86, .5] }); }
   vt += dt * s.spd;
   flash = Math.max(0, flash - dt * 2.2);
   let vac = 1; if (s.flick > .05) vac = 1 - s.flick * .25 * (.5 + .5 * Math.sin(now / 53) * Math.sin(now / 197));
-  const souffle = orbeEtat === "repos" ? .025 * Math.sin(now / 1100) : 0;
+  souffleA += ((orbeEtat === "repos" ? 1 : .35) - souffleA) * (1 - Math.pow(.05, dt));   // la respiration ne s'arrête jamais d'un coup
+  const souffle = .025 * souffleA * Math.sin(now / 1100);
   if (orbeGl.ok) { orbeGl.dessiner(now, dt, vac, souffle); return; }   // la version WebGL (plasma du PC + particules) ; sinon l'étoile 2D ci-dessous
   const R = C * s.R * 1.18 * (1 + souffle + .05 * voixFort + .05 * flash);
   const x = oc; x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, W, W);
@@ -1045,13 +1065,13 @@ function dessinerOrbe(now, dt) {
 let avant = performance.now(), verifTaille = 0, saute = false, cielDt = 0, impaire = false, mesure = { n: 0, cout: 0, depuis: performance.now() };
 function image(now) {
   requestAnimationFrame(image);
-  const calme = orbeEtat === "repos" || orbeEtat === "demarrage";
-  if (calme && (saute = !saute)) return;
+  // 2026-11-14 : l'orbe est dessinée à CHAQUE image (avant : une sur deux au repos, d'où les saccades de la rotation) ;
+  // seul le ciel, qui bouge lentement, passe à mi-cadence
   const dt = Math.min(.05, (now - avant) / 1000); avant = now;
   if ((++verifTaille & 31) === 0 && (largeurVue() !== CW || hauteurVue() !== CH || !ov.width)) tailler();   // taille manquée (ouverture, clavier, rotation)
   const t0 = performance.now();
   cielDt += dt; impaire = !impaire;
-  if (calme || impaire) { dessinerCiel(now, cielDt); cielDt = 0; }   // le ciel bouge lentement : 30 i/s lui suffisent
+  if (impaire) { dessinerCiel(now, cielDt); cielDt = 0; }   // le ciel bouge lentement : 30 i/s lui suffisent
   dessinerOrbe(now, dt);
   majSousTitre(now);
   majBouton();
@@ -2052,7 +2072,13 @@ function vignetteImage(blob, texte) {
 // 2026-11-07 brouillon : les images choisies s'ajoutent en vignettes, RIEN ne part ; elles partent avec le texte (clavier ou dictée) en UN message
 const brouillon = [];
 const MAX_BROUILLON = 12;
-function posBrouillon() { const v = $("saisie").classList.contains("vu"); $("brouillon").style.setProperty("--bas", v ? (parseFloat($("saisie").style.bottom || 0) + $("saisie").offsetHeight) + "px" : "calc(env(safe-area-inset-bottom,0px) + 128px)"); }
+function posBrouillon() {
+  const v = $("saisie").classList.contains("vu");
+  let bas = "calc(env(safe-area-inset-bottom,0px) + 128px)";
+  if (v) bas = (parseFloat($("saisie").style.bottom || 0) + $("saisie").offsetHeight) + "px";
+  else { const r = $("pouce").getBoundingClientRect(); if (r.height > 0 && r.top > 0) bas = Math.max(0, Math.round(innerHeight - r.top)) + "px"; }   // 2026-11-14 : au-dessus du gros micro, jamais dessus
+  $("brouillon").style.setProperty("--bas", bas);
+}
 function rendreBrouillon() {
   const z = $("brouillon"); z.textContent = "";
   for (const b of brouillon) {
@@ -2084,7 +2110,8 @@ async function ajouterBrouillon(fichiers) {
     if (blob.size > 24 * 1024 * 1024) { toast("Cette image est trop grande."); continue; }
     brouillon.push({ blob, mime: blob.type || "image/jpeg", url: URL.createObjectURL(blob) }); n++;
   }
-  if (n) { vib(6); rendreBrouillon(); if (!$("saisie").classList.contains("vu")) ouvrirSaisie(); }
+  // 2026-11-14 : plus de clavier forcé (il cachait le micro) : il dicte OU écrit, le message part avec les images
+  if (n) { vib(6); rendreBrouillon(); if (!$("saisie").classList.contains("vu")) toast("Dicte ou écris ton message : il partira avec " + (brouillon.length > 1 ? "les images." : "l'image."), 3500); }
 }
 function vignettesFil(blobs, texte) {
   const m = document.createElement("div"); m.className = "msg toi"; m.dataset.conv = conv;
@@ -2176,7 +2203,7 @@ addEventListener("load", async () => {
   const fs = [];
   for (const id of ids) { try { const r = await fetch("/api/partage-image?id=" + encodeURIComponent(id), { credentials: "same-origin", cache: "no-store", headers: JETON ? { "X-Nova-Jeton": JETON } : {} }); if (r.ok) { const b = await r.blob(); fs.push(new File([b], "partage.jpg", { type: b.type || "image/jpeg" })); } } catch (x) {} }
   if (tx && !$("champ").value) $("champ").value = tx;
-  if (fs.length) { await ajouterBrouillon(fs); toast("Image ajoutée : écris ou dicte ton message, puis envoie.", 3500); }
+  if (fs.length) { await ajouterBrouillon(fs); toast("Image ajoutée : dicte ou écris ton message, il partira avec.", 3500); }
   else if (tx) ouvrirSaisie();
 });
 // ---- 2026-11-07 : ce qu'il reste des trois cerveaux, discret, en bas (comme sous l'orbe du PC) ----
@@ -2198,10 +2225,17 @@ function majUsage(u) {
   };
   el.innerHTML = [bloc("Claude", "claude", "sem", "5h"), bloc("GPT", "chatgpt", "sem", "5h"), bloc("Gemini", "gemini", "", "jour")].filter(Boolean).join('<span style="opacity:.35"> &nbsp;|&nbsp; </span>');
 }
-function ouvrirSaisie() { fermerFeuilles(); arreterEcoute(); $("saisie").classList.add("vu"); setTimeout(() => { $("champ").focus(); posBrouillon(); }, 60); posBrouillon(); vib(5); maj(); }
+function ouvrirSaisie() { fermerFeuilles(); arreterEcoute(); if (dejaTape) { $("champ").value = dejaTape; dejaTape = ""; } $("saisie").classList.add("vu"); setTimeout(() => { $("champ").focus(); posBrouillon(); }, 60); posBrouillon(); vib(5); maj(); }
 function fermerSaisie() { $("saisie").classList.remove("vu"); $("champ").blur(); posBrouillon(); }
 $("btnEcrire").onclick = ouvrirSaisie;
 $("fermerSaisie").onclick = fermerSaisie;
+let dejaTape = "";   // 2026-11-14 : texte tapé puis micro : les deux partent ensemble (avec les images)
+$("dicterSaisie").addEventListener("click", () => {
+  deverrouillerSon();
+  if (window.MediaRecorder && !micOuvert()) ouvrirMicro().then(f => { if (!f) expliquerMicro(); });   // dans le geste
+  dejaTape = $("champ").value.trim(); $("champ").value = "";
+  fermerSaisie(); vib(8); ecouter();
+});
 $("saisie").addEventListener("submit", ev => { ev.preventDefault(); deverrouillerSon(); arreterEcoute(); stopLecture(); envoyer($("champ").value); $("champ").value = ""; fermerSaisie(); });
 // 2026-11-12 le clavier du téléphone : la zone d'écriture (et la dernière réponse) restent juste au-dessus.
 // L'appli installée est en plein écran (display fullscreen) : Chrome Android n'y redimensionne pas toujours la page,
@@ -2260,7 +2294,7 @@ function ecouter(talkie = false, calme = false) {
 }
 let srTexte = null;
 function arreterEcoute() {
-  if (srTexte) { const t = srTexte(); srTexte = null; if (t) { Sortie.ajouter({ kind: "texte", texte: t, conv }).then(() => Sortie.vider()); toast("Ta dictée est gardée : elle part quand même.", 3500); } }
+  if (srTexte) { const t = srTexte(); srTexte = null; if (t) { if (brouillon.length) envoyerGroupe(t); else Sortie.ajouter({ kind: "texte", texte: t, conv }).then(() => Sortie.vider()); toast("Ta dictée est gardée : elle part quand même.", 3500); } }
   ecouteId++; ecouteFinir = null;
   if (reco) { try { reco.onend = null; reco.abort(); } catch (x) {} reco = null; }
   if (enreg) { enreg.annuler(); enreg = null; }
@@ -2423,6 +2457,7 @@ function envoyerVoix(brut, manuel) {   // mot de réveil « Nova » + filtre des
     }
   }
   fenetreJusqua = Date.now() + 20000;
+  if (dejaTape) { t = dejaTape + " " + t; dejaTape = ""; }
   envoyer(t);
 }
 // ---- 2026-11-07 : « j'enregistre » + chrono pendant toute la dictée (même sans réseau : l'audio est gardé et transcrit au retour) ----
