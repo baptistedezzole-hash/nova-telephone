@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="a305ceff1e0b953a">
+<meta name="nova-version" content="7d1ca65dca56bd0c">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -328,7 +328,11 @@ header .esp { flex: 1; }
 #brouillon { position: fixed; z-index: 12; left: 0; right: 0; bottom: var(--bas, 130px); display: none; gap: 8px; align-items: center; overflow-x: auto; padding: 10px calc(12px + var(--sr)) 8px calc(12px + var(--sl)); background: rgba(5, 7, 15, .92); border-top: 1px solid var(--bord); }
 #brouillon.vu { display: flex; }
 #brouillon .vig { position: relative; flex: none; width: 64px; height: 64px; }
-#brouillon .vig img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; display: block; }
+#brouillon .vig img, #brouillon .vig video { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; display: block; background: #111a33; }
+#brouillon .vig .film { position: absolute; left: 4px; bottom: 3px; font: 600 12px/1 system-ui; text-shadow: 0 0 4px #000; pointer-events: none; }
+#envoiVideo { position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top,0px) + 48px); z-index: 61; min-width: 200px; max-width: 92vw; padding: 7px 14px; border-radius: 999px; border: 1px solid rgba(150,200,255,.55); color: #d8ecff; font: 600 13px/1.2 system-ui,sans-serif; text-align: center; display: none; background: rgba(10,22,44,.9); overflow: hidden; }
+#envoiVideo.vu { display: block; }
+#envoiVideo i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, rgba(90,150,255,.45), rgba(176,108,255,.55)); transition: width .4s; z-index: -1; }
 #brouillon .vig button { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; background: #222a44; color: #fff; border: 1px solid rgba(255,255,255,.4); font: 700 13px/1 system-ui; display: grid; place-items: center; }
 #brouillon .ajout { flex: none; width: 64px; height: 64px; border-radius: 10px; border: 1px dashed rgba(255,255,255,.35); color: #ddd; font: 600 26px system-ui; display: grid; place-items: center; }
 #champ { flex: 1; min-width: 0; height: 46px; padding: 0 16px; font: inherit; font-size: 16px; color: var(--txt); caret-color: var(--or);
@@ -513,8 +517,10 @@ html.saisieHaut #app { bottom: 0; padding-top: calc(var(--st) + 70px); }
   </div>
 </section>
 <input type="file" id="fichierPhoto" accept="image/*" capture="environment" hidden>
-<input type="file" id="fichierGalerie" accept="image/*" multiple hidden>
-<div id="choixImage" style="display:none;position:fixed;left:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 118px);z-index:70;gap:8px;padding:8px;border-radius:16px;background:rgba(10,12,28,.94);border:1px solid rgba(255,255,255,.14)"><button id="cPhoto" style="color:#eee;padding:10px 14px;font:600 14px system-ui">📷 Photo</button><button id="cGalerie" style="color:#eee;padding:10px 14px;font:600 14px system-ui">🖼 Galerie / capture</button></div>
+<input type="file" id="fichierGalerie" accept="image/*,video/*" multiple hidden>
+<input type="file" id="fichierVideo" accept="video/*" hidden>
+<div id="envoiVideo" role="status" aria-live="polite"><i></i><span></span></div>
+<div id="choixImage" style="display:none;position:fixed;left:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 118px);z-index:70;gap:8px;padding:8px;border-radius:16px;background:rgba(10,12,28,.94);border:1px solid rgba(255,255,255,.14)"><button id="cPhoto" style="color:#eee;padding:10px 14px;font:600 14px system-ui">📷 Photo</button><button id="cGalerie" style="color:#eee;padding:10px 14px;font:600 14px system-ui">🖼 Galerie / capture</button><button id="cVideo" style="color:#eee;padding:10px 14px;font:600 14px system-ui">🎬 Vidéo</button></div>
 <div id="brouillon" aria-label="Images à envoyer"></div>
 <form id="saisie" autocomplete="off">
   <button type="button" id="fermerSaisie" aria-label="Fermer"><svg class="ic" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
@@ -1648,6 +1654,134 @@ const Sortie = (() => {
   setInterval(() => { if (mem.size && !occupe) vider(); }, 8000);
   return { ajouter, sauver, vider, restaurer, nouvelId, rendre, exporter, annuler, recents, nb: () => enAttente().length, _mem: mem };
 })();
+// =====================================================================================================
+// 2026-11-13 VIDÉOS : envoyées à part (jamais dans la file des messages, qui ne doit pas être bloquée par un gros fichier),
+// par morceaux de 4 Mo avec reprise (/api/video/debut, /morceau, /fin) et une pastille de progression « 🎬 Vidéo : N % ».
+// Gardées dans IndexedDB « nova-videos » si possible (reprise après fermeture de l'appli), sinon en mémoire.
+// =====================================================================================================
+const Videos = (() => {
+  const MAX = 4 * 1024 * 1024 * 1024, MORCEAU = 4 * 1024 * 1024;
+  const EXT = { mp4: "video/mp4", m4v: "video/x-m4v", mov: "video/quicktime", qt: "video/quicktime", webm: "video/webm", mkv: "video/x-matroska",
+                "3gp": "video/3gpp", "3g2": "video/3gpp2", avi: "video/x-msvideo" };
+  const TYPES = new Set(Object.values(EXT).concat(["video/mpeg4", "video/avi"]));
+  const file = []; let occupe = false, relance = 0, bdP = null, bloque = false;
+  const ext = f => ((f && f.name) || "").split(".").pop().toLowerCase();
+  const estVideo = f => !!f && ((f.type || "").startsWith("video/") || !!EXT[ext(f)]);
+  function typeDe(f) {   // le type que le PC acceptera (le PC revérifie le type ET le début du fichier)
+    const t = (f.type || "").split(";")[0].trim().toLowerCase();
+    if (TYPES.has(t)) return t;
+    return EXT[ext(f)] || "";
+  }
+  function bd() {
+    if (bdP) return bdP;
+    bdP = new Promise(ok => { try { const r = indexedDB.open("nova-videos", 1); r.onupgradeneeded = () => r.result.createObjectStore("v", { keyPath: "mid" });
+      r.onsuccess = () => ok(r.result); r.onerror = r.onblocked = () => ok(null); } catch (x) { ok(null); } });
+    return bdP;
+  }
+  async function bdFaire(f) {
+    const d = await bd(); if (!d) return null;
+    return await new Promise(ok => { try { const t = d.transaction("v", "readwrite"); const q = f(t.objectStore("v")); t.oncomplete = () => ok(q && q.result); t.onerror = t.onabort = () => ok(null); } catch (x) { ok(null); } });
+  }
+  const garderBd = it => bdFaire(s => s.put({ mid: it.mid, blob: it.blob, mime: it.mime, taille: it.taille, texte: it.texte, conv: it.conv, t: it.t }));
+  const oublierBd = it => bdFaire(s => s.delete(it.mid));
+  const mo = n => n >= 1024 ** 3 ? (n / 1024 ** 3).toFixed(1).replace(".", ",") + " Go" : Math.max(0.1, n / 1024 ** 2).toFixed(1).replace(".", ",") + " Mo";
+  function rendre() {
+    const el = $("envoiVideo"); if (!el) return;
+    if (!file.length) { el.classList.remove("vu"); return; }
+    const tot = file.reduce((s, x) => s + x.taille, 0), fait = file.reduce((s, x) => s + Math.min(x.recu || 0, x.taille), 0);
+    const pct = tot ? Math.floor(fait * 100 / tot) : 0, it = file[0];
+    el.querySelector("i").style.width = pct + "%";
+    el.querySelector("span").textContent = "🎬 " + (file.length > 1 ? file.length + " vidéos" : "Vidéo") + " : " + pct + " %"
+      + (it.etat === "coupure" ? " (en pause, pas de connexion)" : it.etat === "fin" ? " (Nova la reçoit…)" : " · " + mo(fait) + " / " + mo(tot));
+    el.classList.add("vu");
+  }
+  function bulle(it) {   // dans le fil, comme une image
+    const m = document.createElement("div"); m.className = "msg toi"; m.dataset.conv = it.conv;
+    const v = document.createElement("video"); v.src = (it.url || URL.createObjectURL(it.blob)) + "#t=0.1"; v.muted = true; v.playsInline = true; v.preload = "metadata"; v.controls = true;
+    v.style.cssText = "display:block;max-width:70%;max-height:190px;border-radius:12px;margin-bottom:4px;background:#000";
+    m.appendChild(v); if (it.texte) m.appendChild(document.createTextNode(it.texte));
+    $("fil").appendChild(m); requestAnimationFrame(() => { const c = $("vueFil"); c.scrollTop = c.scrollHeight; });
+  }
+  async function appel(chemin, corps, delai) {   // comme api(), mais rend aussi le code HTTP (409 = reprise, 415 = refusé…)
+    const ctl = window.AbortController ? new AbortController() : null, tmo = ctl ? setTimeout(() => ctl.abort(), delai) : 0;
+    try {
+      const r = await fetch(chemin, { method: "POST", cache: "no-store", credentials: "same-origin", signal: ctl ? ctl.signal : undefined,
+        headers: Object.assign(JETON ? { "X-Nova-Jeton": JETON } : {}, { "Content-Type": corps instanceof Blob ? "application/octet-stream" : "application/json" }),
+        body: corps instanceof Blob ? corps : JSON.stringify(corps) });
+      let d = {}; try { d = await r.json(); } catch (x) {}
+      return { code: r.status, d: d || {} };
+    } finally { if (tmo) clearTimeout(tmo); }
+  }
+  function planifier(ms) { clearTimeout(relance); relance = setTimeout(vider, ms); }
+  async function retirer(it) { const k = file.indexOf(it); if (k >= 0) file.splice(k, 1); await oublierBd(it); rendre(); }
+  function echec(it, texte) { retirer(it); afficher({ id: "err" + Date.now(), qui: "info", conv: it.conv, texte: "🎬 " + texte }); }
+  async function envoyerUne(it) {   // rend : "fait" | "pause" (réessayer plus tard) | "stop"
+    let r = await appel("/api/video/debut", { mid: it.mid, taille: it.taille, type: it.mime, texte: it.texte || "", conv: it.conv || "nova" }, 30000);
+    if (r.code === 401) return "auth";
+    if (r.code === 429 || r.code >= 500 && r.code !== 507) return "pause";
+    if (r.code !== 200) { echec(it, r.d.erreur && r.d.erreur.length > 12 ? r.d.erreur : "Vidéo refusée par le PC."); return "stop"; }
+    if (r.d.deja) { await retirer(it); return "fait"; }
+    let pos = r.d.fini ? it.taille : (r.d.recu || 0); const pas = Math.min(MORCEAU, r.d.morceau || MORCEAU);
+    it.etat = "envoi";
+    while (pos < it.taille) {
+      if (it.annule) return "stop";
+      it.recu = pos; rendre();
+      r = await appel("/api/video/morceau?id=" + encodeURIComponent(it.mid) + "&pos=" + pos, it.blob.slice(pos, Math.min(it.taille, pos + pas), "application/octet-stream"), 180000);
+      if (r.code === 401) return "auth";
+      if ((r.code === 200 || r.code === 409) && typeof r.d.recu === "number" && r.d.recu !== pos) { pos = r.d.recu; continue; }   // 409 : le PC dit où il en est
+      if (r.code === 413) { echec(it, "Vidéo refusée par le PC (taille)."); return "stop"; }
+      return "pause";   // 404 = envoi oublié par le PC (48 h) : « début » le recrée au prochain essai ; le reste : réessayer plus tard
+    }
+    it.recu = it.taille; it.etat = "fin"; rendre();
+    r = await appel("/api/video/fin", { id: it.mid }, 60000);
+    if (r.code === 401) return "auth";
+    if (r.code === 409) return "pause";
+    if (r.code === 415 || r.code === 404) { echec(it, (r.d && r.d.erreur) || "Vidéo refusée par le PC."); return "stop"; }
+    if (r.code === 200 && r.d.ok) {
+      await retirer(it); toast("🎬 Vidéo reçue par Nova.", 2600);
+      if (!local) { local = "attente"; envoyeA = Date.now(); maj(); }
+      return "fait";
+    }
+    it.essais = (it.essais || 0) + 1;   // vidéo bien rangée sur le PC, mais Nova pas prête : on redemande seulement « fin »
+    if (it.essais >= 20) { echec(it, "La vidéo est sur le PC mais Nova ne l'a pas reçue : " + ((r.d && r.d.erreur) || "erreur inconnue")); return "stop"; }
+    return "pause";
+  }
+  async function vider() {
+    if (occupe || bloque) return; occupe = true;
+    try {
+      while (file.length) {
+        const it = file[0]; let res;
+        try { res = await envoyerUne(it); }
+        catch (x) { res = "coupure"; }
+        if (res === "fait" || res === "stop") continue;
+        if (res === "auth") { bloque = true; it.etat = "coupure"; rendre(); toast("Pour envoyer une vidéo, reconnecte ce téléphone avec le QR code du PC.", 6000); return; }
+        if (res === "coupure" && !it.avise) { it.avise = true; toast("Pas de connexion : la vidéo reprendra toute seule là où elle en était.", 4500); }
+        it.etat = "coupure"; rendre(); planifier(res === "coupure" ? 6000 : 8000); return;
+      }
+    } finally { occupe = false; rendre(); }
+  }
+  async function ajouter(blob, mime, texte, cv, url) {
+    const it = { mid: Sortie.nouvelId().replace(/[^A-Za-z0-9_-]/g, ""), blob, mime, taille: blob.size, texte: texte || "", conv: cv || "nova", t: Date.now(), recu: 0, url };
+    file.push(it); bulle(it); rendre();
+    garderBd(it).catch(() => {});   // un trop gros fichier peut ne pas tenir : il reste en mémoire (garder l'appli ouverte)
+    vider();
+  }
+  function annulerTout() {
+    if (!file.length || !confirm("Arrêter l'envoi " + (file.length > 1 ? "des vidéos" : "de la vidéo") + " ?")) return;
+    for (const it of file.splice(0)) { it.annule = true; oublierBd(it); }
+    clearTimeout(relance); rendre(); toast("Envoi de la vidéo arrêté.", 2500);
+  }
+  async function restaurer() {
+    const d = await bd(); if (!d) return;
+    const l = await new Promise(ok => { try { const q = d.transaction("v").objectStore("v").getAll(); q.onsuccess = () => ok(q.result || []); q.onerror = () => ok([]); } catch (x) { ok([]); } });
+    for (const x of l.sort((a, b) => a.t - b.t)) if (x.blob && !file.some(y => y.mid === x.mid)) file.push(Object.assign(x, { recu: 0 }));
+    rendre(); if (file.length) vider();
+  }
+  addEventListener("load", () => { const el = $("envoiVideo"); if (el) el.onclick = annulerTout; setTimeout(restaurer, 1600); });
+  addEventListener("online", () => { bloque = false; vider(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && file.length) { bloque = false; vider(); } });
+  return { ajouter, estVideo, typeDe, MAX, nb: () => file.length };
+})();
 // ---- 2026-11-07 images : photo / capture -> PC (Documents\Nova\Recu), par la file d'attente (jamais perdue), redimensionnée si énorme ----
 async function reduireImage(f) {
   if (!window.createImageBitmap) return f;
@@ -1671,8 +1805,11 @@ function rendreBrouillon() {
   const z = $("brouillon"); z.textContent = "";
   for (const b of brouillon) {
     const d = document.createElement("div"); d.className = "vig";
-    const im = document.createElement("img"); im.src = b.url; im.alt = ""; d.appendChild(im);
-    const x = document.createElement("button"); x.type = "button"; x.textContent = "×"; x.setAttribute("aria-label", "Enlever cette image");
+    if (b.video) {   // 2026-11-13 vidéo : aperçu muet (première image) + petit 🎬
+      const v = document.createElement("video"); v.src = b.url + "#t=0.1"; v.muted = true; v.playsInline = true; v.preload = "metadata"; d.appendChild(v);
+      const f = document.createElement("span"); f.className = "film"; f.textContent = "🎬"; d.appendChild(f);
+    } else { const im = document.createElement("img"); im.src = b.url; im.alt = ""; d.appendChild(im); }
+    const x = document.createElement("button"); x.type = "button"; x.textContent = "×"; x.setAttribute("aria-label", b.video ? "Enlever cette vidéo" : "Enlever cette image");
     x.onclick = () => { const k = brouillon.indexOf(b); if (k >= 0) brouillon.splice(k, 1); try { URL.revokeObjectURL(b.url); } catch (e) {} rendreBrouillon(); vib(4); };
     d.appendChild(x); z.appendChild(d);
   }
@@ -1684,6 +1821,13 @@ async function ajouterBrouillon(fichiers) {
   for (const f of fichiers) {
     if (!f) continue;
     if (brouillon.length >= MAX_BROUILLON) { toast("Maximum " + MAX_BROUILLON + " images."); break; }
+    if (Videos.estVideo(f)) {   // 2026-11-13 vidéo : jamais réduite, envoyée par morceaux (Videos)
+      const mime = Videos.typeDe(f);
+      if (!mime) { toast("Ce format de vidéo n'est pas accepté."); continue; }
+      if (f.size > Videos.MAX) { toast("Cette vidéo est trop grande (maximum 4 Go)."); continue; }
+      brouillon.push({ blob: f, mime, video: true, url: URL.createObjectURL(f) }); n++; continue;
+    }
+    if (f.type && !f.type.startsWith("image/")) { toast("Ce fichier n'est ni une image ni une vidéo."); continue; }
     let blob = f; try { blob = await reduireImage(f); } catch (x) { blob = f; }
     if (blob.size > 24 * 1024 * 1024) { toast("Cette image est trop grande."); continue; }
     brouillon.push({ blob, mime: blob.type || "image/jpeg", url: URL.createObjectURL(blob) }); n++;
@@ -1697,8 +1841,16 @@ function vignettesFil(blobs, texte) {
   $("fil").appendChild(m); requestAnimationFrame(() => { const c = $("vueFil"); c.scrollTop = c.scrollHeight; });
 }
 async function envoyerGroupe(texte) {
-  const blobs = brouillon.splice(0).map(b => { try { URL.revokeObjectURL(b.url); } catch (e) {} return { blob: b.blob, mime: b.mime }; });
+  const tout = brouillon.splice(0);
+  const videos = tout.filter(b => b.video);
+  const blobs = tout.filter(b => !b.video).map(b => { try { URL.revokeObjectURL(b.url); } catch (e) {} return { blob: b.blob, mime: b.mime }; });
   rendreBrouillon();
+  if (videos.length) {   // 2026-11-13 : le texte part avec les images s'il y en a, sinon avec la dernière vidéo
+    vib(6);   // pas d'« attente » ici : l'envoi peut durer, la pastille 🎬 montre l'avancée (l'attente commence à la réception)
+    if (sessionSeq === Infinity) sessionSeq = seq;
+    videos.forEach((v, i) => Videos.ajouter(v.blob, v.mime, !blobs.length && i === videos.length - 1 ? texte : "", conv, v.url));
+    if (!blobs.length) { toi(texte || "🎬 " + videos.length + " vidéo" + (videos.length > 1 ? "s" : "")); usages++; garder("nova-usages", String(usages)); return; }
+  }
   local = "attente"; envoyeA = Date.now(); toi(texte || "📷 " + blobs.length + " image" + (blobs.length > 1 ? "s" : "")); maj(); vib(6);
   usages++; garder("nova-usages", String(usages));
   if (sessionSeq === Infinity) sessionSeq = seq;
@@ -1709,7 +1861,8 @@ async function envoyerGroupe(texte) {
 $("btnImage").onclick = () => { deverrouillerSon(); const c = $("choixImage"); c.style.display = c.style.display === "none" ? "flex" : "none"; vib(5); };
 $("cPhoto").onclick = () => { $("choixImage").style.display = "none"; $("fichierPhoto").click(); };
 $("cGalerie").onclick = () => { $("choixImage").style.display = "none"; $("fichierGalerie").click(); };
-for (const id of ["fichierPhoto", "fichierGalerie"]) $(id).onchange = async ev => { const l = [...ev.target.files]; ev.target.value = ""; $("choixImage").style.display = "none"; await ajouterBrouillon(l); };
+$("cVideo").onclick = () => { $("choixImage").style.display = "none"; $("fichierVideo").click(); };
+for (const id of ["fichierPhoto", "fichierGalerie", "fichierVideo"]) $(id).onchange = async ev => { const l = [...ev.target.files]; ev.target.value = ""; $("choixImage").style.display = "none"; await ajouterBrouillon(l); };
 async function envoyer(texte) {
   texte = (texte || "").trim(); if (!texte && !brouillon.length) return;
   if (brouillon.length) return envoyerGroupe(texte);
