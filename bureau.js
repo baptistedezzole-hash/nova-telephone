@@ -223,7 +223,10 @@
       } else if (m.t === "stats") {
         statsEl.textContent = `${Math.round(m.fps)} i/s · ${m.kbps >= 1000 ? (m.kbps / 8000).toFixed(1) + " Mo/s" : Math.round(m.kbps / 8) + " ko/s"} · ${m.rtt} ms · ${m.largeur}p`;
       } else if (m.t === "info") {
-        if (m.m === "ecran-indisponible") message("L'écran du PC est verrouillé ou protégé (UAC) : rien à afficher pour l'instant.");
+        // 2026-11-13 : la vraie raison (avant, tout échec disait « verrouillé », même un simple économiseur d'écran)
+        if (m.m === "ecran-verrouille") message("L'écran du PC est verrouillé (ou une fenêtre d'administrateur UAC est ouverte) : rien à afficher pour l'instant.");
+        else if (m.m === "ecran-economiseur") message("L'économiseur d'écran du PC tourne : je le coupe, l'image arrive…");
+        else if (m.m === "ecran-indisponible") message("L'image du PC ne passe pas pour l'instant (écran en veille ?) : je le réveille et je réessaie…");
         else if (m.m === "ecran-revenu") message("");
         else if (m.m === "champ" && !ov.classList.contains("clavier")) ouvrirClavier(true);
       } else if (m.t === "fin") {
