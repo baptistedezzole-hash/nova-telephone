@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="f2026455f504c0b1">
+<meta name="nova-version" content="4562b0395a4fc8be">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -2405,6 +2405,16 @@ setTimeout(() => { if (!connecte && !JETON) avis("Scanne le QR code du PC (dis �
     .then(r => r.ok ? r.text() : Promise.reject())
     .then(t => charger(URL.createObjectURL(new Blob([t], { type: "text/javascript" }))))
     .catch(() => charger("bureau.js"));
+})();
+</script>
+<!-- 2026-11-13 « montre-le-moi » (page ou image du PC, jouable au toucher) : outils\telephone_montrer.py + montrer.js -->
+<script>
+(() => {
+  const charger = src => { const s = document.createElement("script"); s.src = src; document.body.appendChild(s); };
+  fetch("/api/montrer/script", { cache: "no-store" })
+    .then(r => r.ok ? r.text() : Promise.reject())
+    .then(t => charger(URL.createObjectURL(new Blob([t], { type: "text/javascript" }))))
+    .catch(() => charger("/montrer.js"));
 })();
 </script>
 </body>
