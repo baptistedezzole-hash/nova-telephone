@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="dde5f74636b08e6d">
+<meta name="nova-version" content="f2026455f504c0b1">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -233,6 +233,23 @@ header .esp { flex: 1; }
 @property --a { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
 @keyframes tourne { to { --a: 360deg; } }
 #aide { position: absolute; top: calc(100% + 9px); left: 50%; transform: translateX(-50%); text-align: center; white-space: nowrap; transition: opacity .4s; pointer-events: none; }
+/* 2026-11-13 MICRO COUPÉ : petit rond accroché en haut à gauche du gros micro ; barré et rose-rouge quand Nova n'entend plus rien */
+#btnMuet { position: absolute; left: -12px; top: -8px; z-index: 3; width: 32px; height: 32px; padding: 0; border-radius: 50%; display: grid; place-items: center;
+  color: var(--txt2); background: rgba(12, 15, 28, .88); border: 1px solid rgba(233, 214, 168, .22); box-shadow: 0 4px 14px rgba(0, 0, 0, .45);
+  transition: transform .2s var(--ressort), background .3s, border-color .3s, color .3s, box-shadow .3s; -webkit-tap-highlight-color: transparent; }
+#btnMuet::before { content: ""; position: absolute; inset: -8px; border-radius: 50%; }   /* zone de toucher plus large que le rond */
+#btnMuet svg.ic { width: 16px; height: 16px; stroke-width: 1.8; }
+#btnMuet .barre { opacity: 0; transition: opacity .25s; }
+#btnMuet:active { transform: scale(.9); }
+#btnMuet.on { color: #ffe3e0; background: rgba(120, 22, 34, .92); border-color: rgba(255, 143, 134, .85); box-shadow: 0 0 14px rgba(255, 110, 110, .45), 0 4px 14px rgba(0, 0, 0, .45); }
+#btnMuet.on .barre { opacity: 1; }
+#parler .barre { opacity: 0; transition: opacity .3s; }
+#parler.coupe { border-color: rgba(255, 143, 134, .55); }
+#parler.coupe svg.ic { color: rgba(255, 200, 196, .85); }
+#parler.coupe .barre { opacity: 1; }
+#parler.coupe .vu { opacity: 0 !important; animation: none; }
+#chipMic.coupe { color: #ffd6d2; border-color: rgba(255, 143, 134, .6); background: rgba(120, 22, 34, .35); }
+@media (orientation: landscape) and (max-height: 560px) { #btnMuet { left: -14px; top: -10px; } }
 
 #perm { grid-area: pouce; z-index: 3; display: none; padding: 12px 18px calc(14px + var(--sb)); text-align: center; }
 #perm.vu { display: block; animation: monte .5s var(--ressort); }
@@ -457,8 +474,9 @@ html.saisieHaut #app { bottom: 0; padding-top: calc(var(--st) + 70px); }
     <button class="rond" id="btnEcrire" aria-label="Écrire à Nova"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M7 10h.01M10.3 10h.01M13.6 10h.01M17 10h.01M8 14h8"/></svg></button>
     <div id="parlerZone">
       <button id="parler" aria-label="Parler à Nova"><span class="an"></span><span class="vu"></span>
-        <svg class="ic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11.5" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></svg>
+        <svg class="ic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11.5" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/><path class="barre" d="M4 3.5l16 17"/></svg>
         <span class="stop"></span><span class="pts"><i></i><i></i><i></i></span></button>
+      <button id="btnMuet" aria-label="Couper mon micro" aria-pressed="false"><svg class="ic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11.5" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/><path class="barre" d="M4 3.5l16 17"/></svg></button>
       <div id="aide" class="lbl"></div>
     </div>
     <button class="rond" id="btnConvs" aria-label="Les conversations"><svg class="ic" viewBox="0 0 24 24"><circle cx="5.5" cy="16.5" r="1.6"/><circle cx="11" cy="7" r="1.6"/><circle cx="18.5" cy="10.5" r="1.6"/><circle cx="15.5" cy="19" r="1.2"/><path d="M6.6 15.1l3.4-6.5M12.5 7.8l4.6 2M17.9 12l-1.8 5.5"/></svg><b id="badge"></b></button>
@@ -796,6 +814,7 @@ let whisperPC = true;
 let moteur = lire("nova-moteur2", "pc");
 let reveilNova = lire("nova-reveil", "0") === "1", fenetreJusqua = 0;
 let mainsLibres = false;      // écoute automatique après chaque réponse (double-touche)
+let micCoupe = lire("nova-micro-coupe", "0") === "1";   // 2026-11-13 : micro coupé par lui (gardé d'une ouverture à l'autre) = Nova n'entend rien
 let local = "";               // "", "ecoute", "envoi", "attente", "parle" : ce que fait le téléphone
 let ptt = false;              // écoute « talkie » (bouton maintenu)
 let novaEtat = "demarrage", seq = 0, envoyeA = 0, connecte = false, dejaConnecte = false;
@@ -835,6 +854,9 @@ function maj() {
   b.classList.toggle("ecoute", local === "ecoute" && !ptt); b.classList.toggle("ptt", local === "ecoute" && ptt);
   b.classList.toggle("parle", local === "parle"); b.classList.toggle("attente", local === "attente" || local === "envoi");
   b.classList.toggle("libre", mainsLibres);
+  b.classList.toggle("coupe", micCoupe);
+  const bm = $("btnMuet");
+  if (bm) { bm.classList.toggle("on", micCoupe); bm.setAttribute("aria-pressed", micCoupe ? "true" : "false"); bm.setAttribute("aria-label", micCoupe ? "Rallumer mon micro" : "Couper mon micro"); }
   $("aide").textContent = aideTexte(e);
   majAnnuler(e);
   majChipMic(e);
@@ -843,7 +865,8 @@ function maj() {
 function majChipMic(e) {   // 2026-11-07 mains libres 2 : un indicateur clair
   const c = $("chipMic"); if (!c) return;
   let t = "", k = "";
-  if (mainsLibres) {
+  if (micCoupe) { t = "Micro coupé · Nova ne t'entend pas"; k = "coupe"; }
+  else if (mainsLibres) {
     if (!micOuvert() && !(!window.MediaRecorder && SR)) { t = "Touche l'écran pour activer le micro"; k = "alerte"; }
     else if (local === "ecoute") { t = reveilNova && Date.now() > fenetreJusqua ? "J'écoute · dis « Nova »" : "J'écoute · parle quand tu veux"; k = "ecoute"; }
     else if (local === "parle" || lecture) { t = "Nova parle · je réécoute après"; k = "parle"; }
@@ -857,6 +880,7 @@ function aideTexte(e) {
   if (local === "parle") return "touche pour couper";
   if (local === "ecoute") return ptt ? "" : "touche pour envoyer";
   if (local === "attente" || local === "envoi") return "";
+  if (micCoupe) return "micro coupé";
   if (mainsLibres) return "mains libres · 2 touches : stop";
   if (usages < 6) return "touche · maintiens · double-touche";
   return "";
@@ -1823,6 +1847,7 @@ const SILENCE = 1900, SILENCE_PC = 2200, PATIENCE = 20000;   // comme sur le PC 
 let reco = null, enreg = null, ecouteId = 0, ecouteFinir = null;
 function ecouter(talkie = false, calme = false) {
   stopLecture(); arreterEcoute();
+  if (micCoupe) { if (!calme) { vib([8, 40, 8]); toast("Micro coupé · touche le petit micro barré pour le rallumer.", 3200); } maj(); return; }   // 2026-11-13 : rien n'est écouté
   if (novaEtat === "permission" && conv === "nova") return;
   ptt = talkie; local = "ecoute"; if (!calme) toi(""); maj(); if (!calme) vib(12);
   const id = ++ecouteId;
@@ -1955,6 +1980,7 @@ async function brancherMicro(f) {   // le flux est là : l'analyseur pour la dé
 }
 // À appeler DIRECTEMENT dans le gestionnaire du toucher : getUserMedia part tout de suite, avant tout await.
 function ouvrirMicro() {
+  if (micCoupe) return Promise.resolve(null);   // 2026-11-13 micro coupé : on ne le demande même pas (micErreur reste vide : aucun bandeau)
   if (micOuvert()) { try { if (micCtx && micCtx.state !== "running") micCtx.resume(); } catch (x) {} return Promise.resolve(micFlux); }
   if (micOuvre) return micOuvre;
   let p;
@@ -2023,7 +2049,7 @@ async function ecouterPC(id, utt = null, calme = false) {
   let fond = -60, parle = !!utt, fortTotal = utt ? 9999 : 0, relance = false, fortDepuis = 0, dernierFort = utt ? Date.now() : 0, debut = Date.now(), annule = false, rotation = false, garde = false;
   const fermer = () => { clearInterval(minut); niveauMicro = 0; if (!rotation) chronoFin(); };
   if (!utt && (manuel || !mainsLibres)) chronoDebut(); else if (utt) chronoFin(true);   // mains libres : « j'enregistre » seulement quand il parle (plus de clignotement toutes les 20 s)   // le micro, lui, reste ouvert en mains libres
-  enreg = { annuler: () => { if (parle || utt) garde = true; else annule = true; fermer(); try { rec.stop(); } catch (x) {} if (!mainsLibres) fermerMicro(); } };
+  enreg = { annuler: (jeter) => { if ((parle && !jeter) || utt) garde = true; else annule = true; fermer(); try { rec.stop(); } catch (x) {} if (!mainsLibres) fermerMicro(); } };
   ecouteFinir = (envoi) => { ecouteFinir = null; if (!envoi) { enreg && enreg.annuler(); enreg = null; local = ""; ptt = false; maj(); return; }
     if (Date.now() - debut > 700) parle = parle || ptt || !mainsLibres; fermer(); try { rec.stop(); } catch (x) {} };
   rec.ondataavailable = ev => { if (ev.data && ev.data.size) bouts.push(ev.data); };
@@ -2146,6 +2172,27 @@ function toucheSimple() {   // ce que fait UNE touche, selon le moment
   b.addEventListener("pointercancel", () => { if (enTalkie && ecouteFinir) ecouteFinir(true); bas = false; enTalkie = false; clearTimeout(tLong); b.classList.remove("appui"); });
 })();
 $("btnLibre").onclick = () => { vib(10); if (mainsLibres) arreterMainsLibres(); else demarrerMainsLibres(); majBtnLibre(); };
+// 2026-11-13 MICRO COUPÉ : le petit rond en haut à gauche du gros micro. Coupé = l'écoute en cours est jetée, le micro du téléphone
+// est rendu (plus de voyant Android), rien ne le rouvre (ni mains libres, ni toucher, ni bouton micro du mode PC) ; Nova continue de répondre et de parler.
+function couperMicro(oui) {
+  micCoupe = !!oui; garder("nova-micro-coupe", micCoupe ? "1" : "0");
+  if (micCoupe) {
+    srTexte = null;   // dictée Android en cours : jetée (pas « gardée »)
+    if (enreg) { try { enreg.annuler(true); } catch (x) {} enreg = null; }
+    arreterEcoute(); fermerMicro(); chronoFin();
+    if (micOuvre) micOuvre.then(() => { if (micCoupe) fermerMicro(); });
+    vib([12, 50, 12]); toast("Micro coupé : Nova ne t'entend plus.");
+  } else {
+    vib(10); toast("Micro rallumé.");
+    if (mainsLibres) {   // dans le geste : le micro se rouvre tout de suite et l'écoute reprend
+      const p = (!window.MediaRecorder && SR) ? Promise.resolve(true) : ouvrirMicro();
+      p.then(f => { if (!f) { expliquerMicro(); return; } maj(); if (mainsLibres && !micCoupe && !local && !lecture) { reecouter = true; suite(); } });
+    }
+  }
+  maj();
+}
+$("btnMuet").addEventListener("click", ev => { ev.stopPropagation(); deverrouillerSon(); couperMicro(!micCoupe); });
+window.NovaMicro = { coupe: () => micCoupe, couper: couperMicro };
 // mains libres allumées par défaut : le navigateur veut un geste avant le son et le micro -> dès le 1er toucher de l'écran
 if (lire("nova-libre", "1") !== "0") {
   const premier = (ev) => {

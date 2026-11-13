@@ -292,6 +292,7 @@
     else if (a === "qualite") { preset = { auto: "fluide", fluide: "net", net: "auto" }[preset]; b.textContent = { auto: "Auto", fluide: "Fluide", net: "Net" }[preset]; envoyer({ t: "q", preset }); }
     else if (a === "ecran") { if (ecrans.length > 1) envoyer({ t: "ecran", i: (ecranI + 1) % ecrans.length }); }
     else if (a === "clavier") { ov.classList.contains("clavier") ? fermerClavier() : ouvrirClavier(); }
+    else if (a === "micro" && window.NovaMicro && NovaMicro.coupe()) { if (!msgEl.classList.contains("vu")) message("Micro coupé : rallume-le avec le petit micro barré, à gauche du gros micro de Nova.", 3500); }   // 2026-11-13
     else if (a === "micro") { try { if (typeof window.toucheSimple === "function") window.toucheSimple(); } catch (x) {} b.classList.add("on"); setTimeout(() => b.classList.remove("on"), 600); }
     else if (a === "plein") pleinEcran();
     else if (a === "cacher") ov.classList.add("cache");
