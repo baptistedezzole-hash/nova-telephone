@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="7d1ca65dca56bd0c">
+<meta name="nova-version" content="326a096cde27ad72">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -92,6 +92,8 @@ header .esp { flex: 1; }
 #scene { grid-area: scene; position: relative; min-width: 0; overflow: visible; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; }
 #orbe { position: relative; width: var(--orbe); height: var(--orbe); flex: none; touch-action: manipulation; }
 #orbe canvas { position: absolute; inset: -14%; width: 128%; height: 128%; }
+#orbe canvas[hidden] { display: none; }
+#orbe #orbeGl { inset: -30%; width: 160%; height: 160%; pointer-events: none; }   /* les particules débordent un peu autour de l'orbe */
 /* 2026-11-07 mains libres 2 : pastille « j'écoute » */
 #chipMic { margin: 6px auto 0; display: none; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px; font: 500 12px/1.2 system-ui, sans-serif; color: var(--txt2); border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.05); width: max-content; max-width: 90%; }
 #chipMic.vu { display: flex; } #chipMic i { width: 8px; height: 8px; border-radius: 50%; background: #8d93a8; flex: none; }
@@ -453,7 +455,7 @@ html.saisieHaut #app { bottom: 0; padding-top: calc(var(--st) + 70px); }
   </header>
   <div id="scene">
     <div id="agents"></div>
-    <div id="orbe"><canvas id="orbeCv"></canvas></div>
+    <div id="orbe"><canvas id="orbeGl" hidden></canvas><canvas id="orbeCv"></canvas></div>
     <div id="etat" class="lbl"></div>
     <div id="chipMic" role="status" aria-live="polite"><i></i><span></span></div>
     <button id="btnAnnuler" aria-label="Annuler le message"><b><svg class="ic" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></b><span>Annuler</span></button>
@@ -671,11 +673,225 @@ const satQ = Array.from({ length: 2 }, () => []);
 let odpr = 1;
 function tailleOrbe() {
   odpr = Math.min(1.75, window.devicePixelRatio || 1);
+  if (orbeGl.ok) { orbeGl.tailler(); return; }
   const w = Math.round(ov.clientWidth * odpr); if (w && ov.width !== w) { ov.width = ov.height = w; }
 }
+
+// =====================================================================================================
+// L'ORBE EN WEBGL : le plasma de l'orbe du PC (même shader, mêmes couleurs) + des milliers de particules
+// qui gravitent autour (l'esprit du prototype « fluide ») : coque qui tourne, écoute = nuage dispersé + anneau,
+// réflexion = trois orbites inclinées, parole = ondes. Positions calculées dans le shader : rien à simuler côté JS.
+// Repli automatique sur l'étoile 2D si WebGL manque ou se perd.
+// =====================================================================================================
+const orbeGl = (() => {
+  const o = { ok: false };
+  const cv = $("orbeGl");
+  let gl = null;
+  try { gl = cv.getContext("webgl", { premultipliedAlpha: true, alpha: true, antialias: false, powerPreference: "low-power" }); } catch (e) {}
+  if (!gl) return o;
+  // couleurs du plasma (orbe du PC) et des particules (prototype fluide)
+  const ET = {
+    demarrage: { c1: [.35,.30,.55], c2: [.15,.12,.30], ta: .55, en: .25, vi: .4,  a: [.35,.3,.6],  b: [.2,.15,.4],   c: [.6,.6,1] },
+    repos:     { c1: [.62,.32,.95], c2: [.95,.40,.65], ta: .50, en: .20, vi: .35, a: [.55,.30,1],  b: [1,.40,.74],   c: [.45,.88,1] },
+    ecoute:    { c1: [.25,.85,1],   c2: [.55,.35,1],   ta: .78, en: .55, vi: 1.0, a: [.22,.78,1],  b: [.48,.38,1],   c: [.85,.97,1] },
+    envoi:     { c1: [.85,.90,1],   c2: [.55,.40,1],   ta: .70, en: .9,  vi: 1.6, a: [.85,.9,1],   b: [.55,.45,1],   c: [1,1,1] },
+    reflechit: { c1: [1,.55,.25],   c2: [.85,.20,.75], ta: .68, en: .85, vi: 1.8, a: [1,.58,.22],  b: [.92,.24,.75], c: [1,.9,.62] },
+    parle:     { c1: [1,.45,.70],   c2: [.55,.30,1],   ta: .74, en: .6,  vi: 1.2, a: [1,.44,.72],  b: [.58,.34,1],   c: [1,.86,.96] },
+    permission:{ c1: [1,.75,.20],   c2: [.95,.45,.10], ta: .70, en: .6,  vi: 1.0, a: [1,.78,.25],  b: [.95,.45,.12], c: [1,.95,.7] },
+    connexion: { c1: [1,.35,.35],   c2: [.55,.15,.35], ta: .60, en: .4,  vi: .7,  a: [1,.36,.36],  b: [.55,.15,.38], c: [1,.7,.7] },
+    erreur:    { c1: [1,.25,.25],   c2: [.40,.10,.20], ta: .55, en: .3,  vi: .5,  a: [1,.26,.26],  b: [.45,.1,.24],  c: [1,.6,.5] },
+  };
+  const VC = ["c1", "c2", "a", "b", "c"], VN = ["ta", "en", "vi"];
+  const cur = {}; for (const k of VC) cur[k] = ET.demarrage[k].slice(); for (const k of VN) cur[k] = ET.demarrage[k];
+  const mode = { ec: 0, pe: 0, pa: 0, nv: 0 };   // écoute, réflexion, parole, envoi (0..1, lissés)
+  const ECH = .88;   // le plasma un peu plus petit que sur le PC : la place pour les particules
+
+  const PLASMA_VS = `attribute vec2 p; varying vec2 uv; void main(){ uv = p; gl_Position = vec4(p, 0., 1.); }`;
+  const PLASMA_FS = `
+precision mediump float;
+varying vec2 uv;
+uniform float t, taille, energie, parle, flash, vis, ondeQ, ondeA;
+uniform vec3 c1, c2, ondeC;
+float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f);
+  return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
+float fbm(vec2 p){ float v = 0., a = .5; for(int i=0;i<5;i++){ v += a*n(p); p = p*2.03 + 7.1; a *= .5; } return v; }
+void main(){
+  vec2 p = uv;
+  float r = length(p);
+  if (r > .99) { gl_FragColor = vec4(0.); return; }
+  float a = atan(p.y, p.x);
+  float bruit = fbm(vec2(a*1.6 + t*.35, t*.5)) - .5;
+  float rayon = taille * (.62 + .1*energie*bruit + .06*parle*sin(a*3. + t*9.) + .04*flash);
+  float d = r - rayon;
+  vec3 col = vec3(0.); float corps = smoothstep(.015, -.015, d);
+  if (corps > 0.) {
+    vec2 q = p*2.2;
+    float pl = fbm(q + vec2(fbm(q + t*.25), fbm(q - t*.3)) * (1.2 + energie));
+    col = mix(c2, c1, smoothstep(.2, .85, pl)) + .55 * pow(max(0., 1. - r/rayon), 2.5);
+  }
+  float bord = exp(-abs(d) * 28.) * (.7 + .5*energie);
+  float halo = exp(-max(d, 0.) * 6.) * .45 * (.5 + energie) * smoothstep(.99, .6, r);
+  float anneaux = parle * smoothstep(.02, 0., abs(fract(r*4. - t*1.5) - .5) - .45) * smoothstep(.95, rayon, r) * .45;
+  float onde = ondeA * exp(-abs(r - rayon*(1.05 + ondeQ*1.9)) * 140.) * (1. - ondeQ) * (1. - ondeQ);
+  vec3 c = col * corps + mix(c1, vec3(1.), .4) * bord + c1 * halo + c1 * anneaux + ondeC * onde;
+  float alpha = clamp(corps + bord + halo + anneaux + onde, 0., 1.);
+  gl_FragColor = vec4(c * alpha, alpha) * vis;
+}`;
+  // les particules : graine (u, v, w, z) + genre (0 = poussière, 1 = étincelle façon PC) ; tout est calculé ici
+  const PART_VS = `
+attribute vec4 g; attribute float k;
+uniform float t, rayon, ec, pe, pa, nv, voix, micro, dpr, base, vis, fuite;
+uniform vec3 ca, cb, cc;
+varying vec3 vcol; varying float va;
+vec3 rotY(vec3 p, float a){ float c = cos(a), s = sin(a); return vec3(c*p.x + s*p.z, p.y, -s*p.x + c*p.z); }
+vec3 rotX(vec3 p, float a){ float c = cos(a), s = sin(a); return vec3(p.x, c*p.y - s*p.z, s*p.y + c*p.z); }
+vec3 rotZ(vec3 p, float a){ float c = cos(a), s = sin(a); return vec3(c*p.x - s*p.y, s*p.x + c*p.y, p.z); }
+void main(){
+  float th = acos(1. - 2.*g.x), ph = g.y * 6.2832;
+  float lat = cos(th);
+  // la coque : rotation différentielle (l'équateur va plus vite) + remous
+  float vit = .35 + .55*(1. - abs(lat)) + .25*g.z;
+  float phi = ph + t*vit;
+  float rr = rayon * (1.22 + .75*g.w*g.w + .07*sin(phi*3. + t*1.7 + g.z*9.) + .05*sin(th*5. - t*1.3));
+  rr *= 1. + pa * (.10*sin(th*4. - t*8.5 + g.z*2.) + .10*voix);     // parole : ondes qui courent sur la coque
+  rr *= 1. - .22*nv;                                                   // envoi : tout se resserre
+  vec3 pos = vec3(sin(th)*cos(phi), lat, sin(th)*sin(phi)) * rr;
+  pos = rotX(pos, .42); pos = rotZ(pos, .18);
+  // écoute : nuage dispersé qui respire avec le micro, et un anneau bien net
+  vec3 nuage = pos * (1.25 + .55*g.w + .35*micro) + vec3(sin(t*.7 + g.y*30.), cos(t*.6 + g.x*30.), 0.) * rayon*.12;
+  float anneau = step(.72, g.z);
+  float aa = ph + t*(.5 + .3*g.w);
+  vec3 bague = vec3(cos(aa), sin(aa)*.30, sin(aa)) * rayon * (1.85 + .10*(g.w - .5) + .12*micro);
+  bague = rotZ(bague, -.12);
+  pos = mix(pos, mix(nuage, bague, anneau), ec);
+  // réflexion : trois orbites gyroscopiques inclinées
+  float o = floor(g.z * 3.);
+  float ao = ph + t*(1.6 + .5*o)*(mod(o, 2.) > .5 ? -1. : 1.);
+  vec3 orb = vec3(cos(ao), 0., sin(ao)) * rayon * (1.45 + .22*o + .16*(g.w - .5));
+  orb.y += (g.x - .5) * rayon * .08;
+  orb = rotX(orb, 1.05 + .55*o + t*.25); orb = rotZ(orb, o*2.09 + t*.15);
+  pos = mix(pos, orb, pe * (1. - step(.85, g.w)));
+  // les étincelles du PC : une orbite aplatie, plus grosses
+  if (k > .5) {
+    float ae = ph + t*(.5 + .9*g.z)*(1. + 1.2*pe);
+    float re = rayon * (1.25 + g.w*.9) * (1. + .05*sin(t*2. + g.x*6.));
+    pos = vec3(cos(ae)*re, sin(ae)*re*.82, sin(ae)*.5*re);
+  }
+  float prof = pos.z / max(length(pos), .001);                         // -1 derrière .. 1 devant
+  // derrière le plasma : presque caché
+  float cache = (pos.z < 0. && length(pos.xy) < rayon*.98) ? .12 : 1.;
+  float sc = .55 + .45*sin(t*3.1 + g.x*61. + g.y*17.);                 // scintillement
+  float front = .55 + .45*prof;
+  vcol = mix(mix(ca, cb, g.y), cc, step(.9, g.x) * .8 + k*.5);
+  float bord = smoothstep(1.02, .82, length(pos.xy));
+  va = (k > .5 ? .9 : .55) * (.35 + .65*sc) * (.45 + .75*front) * cache * bord * vis * fuite;
+  gl_PointSize = (k > .5 ? 7.5 + 5.*g.w : 1.3 + 1.9*g.w*g.w + 1.2*front) * base * dpr;
+  gl_Position = vec4(pos.xy, 0., 1.);
+}`;
+  const PART_FS = `
+precision mediump float;
+varying vec3 vcol; varying float va;
+void main(){
+  vec2 d = gl_PointCoord - .5; float r2 = dot(d, d) * 4.;
+  if (r2 > 1.) discard;
+  float a = va * exp(-r2 * 3.2);
+  vec3 c = mix(vcol, vec3(1.), exp(-r2 * 14.) * .7);
+  gl_FragColor = vec4(c * a, a * .6);
+}`;
+  function prog(vsrc, fsrc) {
+    const mk = (ty, src) => { const s = gl.createShader(ty); gl.shaderSource(s, src); gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+    const p = gl.createProgram(); gl.attachShader(p, mk(gl.VERTEX_SHADER, vsrc)); gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fsrc));
+    gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) { const nom = gl.getActiveUniform(p, i).name; u[nom] = gl.getUniformLocation(p, nom); }
+    return { p, u };
+  }
+  // combien de particules : selon l'appareil (et bien moins si les animations sont réduites)
+  const mem = navigator.deviceMemory || 4, coeurs = navigator.hardwareConcurrency || 4;
+  let N = mem >= 6 && coeurs >= 8 ? 6000 : mem >= 4 && coeurs >= 6 ? 4200 : mem >= 3 ? 3000 : 1800;
+  if (REDUIT) N = 1200;
+  const NE = 46;   // les étincelles du PC
+  let P, Q, bufQ, bufP, actifs = N;
+  function construire() {
+    P = prog(PLASMA_VS, PLASMA_FS); Q = prog(PART_VS, PART_FS);
+    bufQ = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bufQ);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+    const tot = N + NE, d = new Float32Array(tot * 5);
+    let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < tot; i++) {
+      const e = i >= N, j = i * 5;
+      d[j] = e ? rnd() : (i + .5) / N;                       // sphère de Fibonacci (répartition régulière)
+      d[j + 1] = e ? rnd() : (i * .618034) % 1;
+      d[j + 2] = rnd(); d[j + 3] = rnd(); d[j + 4] = e ? 1 : 0;
+    }
+    bufP = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bufP); gl.bufferData(gl.ARRAY_BUFFER, d, gl.STATIC_DRAW);
+  }
+  try { construire(); } catch (e) { console.warn("orbe WebGL indisponible :", e); return o; }
+  const locP = gl.getAttribLocation(P.p, "p"), locG = gl.getAttribLocation(Q.p, "g"), locK = gl.getAttribLocation(Q.p, "k");
+  let perdu = false;
+  cv.addEventListener("webglcontextlost", ev => { ev.preventDefault(); perdu = true; basculer2D(); });
+  function basculer2D() { o.ok = false; cv.hidden = true; ov.hidden = false; try { tailleOrbe(); } catch (e) {} }
+  o.tailler = () => {
+    const w = Math.round(cv.clientWidth * Math.min(1.75, window.devicePixelRatio || 1));
+    if (w && cv.width !== w) { cv.width = cv.height = w; gl.viewport(0, 0, w, w); }
+  };
+  let tt = 0, mesureT = 0, mesureN = 0, lent = 0;
+  o.dessiner = (now, dt, vac, souffle) => {
+    if (perdu || !cv.width) return;
+    const e = ET[orbeEtat] || ET.repos, k = 1 - Math.pow(.02, dt);
+    for (const c of VC) for (let i = 0; i < 3; i++) cur[c][i] += (e[c][i] - cur[c][i]) * k;
+    for (const c of VN) cur[c] += (e[c] - cur[c]) * k;
+    const km = 1 - Math.pow(.06, dt);
+    mode.ec += ((orbeEtat === "ecoute" ? 1 : 0) - mode.ec) * km;
+    mode.pe += ((orbeEtat === "reflechit" ? 1 : 0) - mode.pe) * km;
+    mode.pa += ((orbeEtat === "parle" ? 1 : 0) - mode.pa) * km;
+    mode.nv += ((orbeEtat === "envoi" ? 1 : 0) - mode.nv) * (1 - Math.pow(.002, dt));
+    tt += dt * cur.vi * (REDUIT ? .25 : 1);
+    const rayon = (cur.ta + souffle) * ECH * .62;
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.enable(gl.BLEND);
+    // 1) le plasma (comme sur le PC)
+    gl.useProgram(P.p); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufQ); gl.enableVertexAttribArray(locP); gl.vertexAttribPointer(locP, 2, gl.FLOAT, false, 0, 0);
+    const u = P.u, parle = orbeEtat === "parle" ? Math.min(1, .55 + voixFort * .5) : mode.pa * .5;
+    gl.uniform1f(u.t, tt); gl.uniform1f(u.taille, (cur.ta + souffle) * ECH); gl.uniform1f(u.energie, cur.en + .15 * voixFort);
+    gl.uniform1f(u.parle, parle); gl.uniform1f(u.flash, flash); gl.uniform1f(u.vis, vac);
+    gl.uniform3fv(u.c1, cur.c1); gl.uniform3fv(u.c2, cur.c2);
+    const od = ondes[ondes.length - 1], oq = od ? Math.min(1, (now - od.t0) / od.d) : 1;
+    gl.uniform1f(u.ondeQ, oq); gl.uniform1f(u.ondeA, od ? .9 : 0); gl.uniform3fv(u.ondeC, od ? od.c : [1, 1, 1]);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.disableVertexAttribArray(locP);
+    // 2) les particules, en lumière additive
+    gl.useProgram(Q.p); gl.blendFunc(gl.ONE, gl.ONE);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufP);
+    gl.enableVertexAttribArray(locG); gl.vertexAttribPointer(locG, 4, gl.FLOAT, false, 20, 0);
+    gl.enableVertexAttribArray(locK); gl.vertexAttribPointer(locK, 1, gl.FLOAT, false, 20, 16);
+    const v = Q.u;
+    gl.uniform1f(v.t, tt); gl.uniform1f(v.rayon, rayon);
+    gl.uniform1f(v.ec, mode.ec); gl.uniform1f(v.pe, mode.pe); gl.uniform1f(v.pa, mode.pa); gl.uniform1f(v.nv, mode.nv);
+    gl.uniform1f(v.voix, voixFort); gl.uniform1f(v.micro, niveauMicro);
+    gl.uniform1f(v.dpr, cv.width / Math.max(1, cv.clientWidth)); gl.uniform1f(v.base, Math.max(.7, Math.min(1.25, cv.clientWidth / 520)));
+    gl.uniform1f(v.vis, vac * (.75 + .5 * cur.en)); gl.uniform1f(v.fuite, 1);
+    const ring = orbeEtat === "ecoute" && ptt ? [1, .62, .28] : cur.c;   // talkie : anneau ambre, comme sur le PC
+    gl.uniform3fv(v.ca, cur.a); gl.uniform3fv(v.cb, cur.b); gl.uniform3fv(v.cc, ring);
+    gl.drawArrays(gl.POINTS, 0, actifs);                          // la poussière (peut être réduite si l'appareil peine)
+    gl.drawArrays(gl.POINTS, N, NE);                              // les étincelles
+    gl.disableVertexAttribArray(locG); gl.disableVertexAttribArray(locK);
+    // l'appareil peine (plus de 24 ms par image pendant 2 s) : moins de particules, jamais moins de 900
+    mesureT += dt; mesureN++;
+    if (mesureT > 2) {
+      const moy = mesureT / mesureN; mesureT = mesureN = 0;
+      const calme = orbeEtat === "repos" || orbeEtat === "demarrage";
+      if (moy > (calme ? .045 : .024)) { if (++lent >= 2) { actifs = Math.max(900, Math.round(actifs * .7)); lent = 0; } } else lent = 0;
+    }
+  };
+  o.ok = true; cv.hidden = false; ov.hidden = true;
+  return o;
+})();
 function bruitA(a, t) { return Math.sin(3 * a + t * 1.3) * .5 + Math.sin(5 * a - t * .9 + 1.7) * .3 + Math.sin(9 * a + t * 2.1 + .4) * .2; }
 function dessinerOrbe(now, dt) {
-  const W = ov.width; if (!W) return;
+  const W = ov.width; if (!W && !orbeGl.ok) return;
   const k = 1 - Math.pow(.025, dt);
   for (const c of CLES) for (let i = 0; i < 3; i++) courant[c][i] += (cible[c][i] - courant[c][i]) * k;
   for (const c of NUMS) courant[c] += ((cible[c] || 0) - courant[c]) * k;
@@ -691,6 +907,7 @@ function dessinerOrbe(now, dt) {
   flash = Math.max(0, flash - dt * 2.2);
   let vac = 1; if (s.flick > .05) vac = 1 - s.flick * .25 * (.5 + .5 * Math.sin(now / 53) * Math.sin(now / 197));
   const souffle = orbeEtat === "repos" ? .025 * Math.sin(now / 1100) : 0;
+  if (orbeGl.ok) { orbeGl.dessiner(now, dt, vac, souffle); return; }   // la version WebGL (plasma du PC + particules) ; sinon l'étoile 2D ci-dessous
   const R = C * s.R * 1.18 * (1 + souffle + .05 * voixFort + .05 * flash);
   const x = oc; x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, W, W);
   const MAX = C * .97;   // rien ne touche le bord du canvas (sinon on voit son carré)
