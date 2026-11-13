@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="326a096cde27ad72">
+<meta name="nova-version" content="56345e1186807885">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -735,8 +735,9 @@ void main(){
   float anneaux = parle * smoothstep(.02, 0., abs(fract(r*4. - t*1.5) - .5) - .45) * smoothstep(.95, rayon, r) * .45;
   float onde = ondeA * exp(-abs(r - rayon*(1.05 + ondeQ*1.9)) * 140.) * (1. - ondeQ) * (1. - ondeQ);
   vec3 c = col * corps + mix(c1, vec3(1.), .4) * bord + c1 * halo + c1 * anneaux + ondeC * onde;
-  float alpha = clamp(corps + bord + halo + anneaux + onde, 0., 1.);
-  gl_FragColor = vec4(c * alpha, alpha) * vis;
+  // le corps couvre le ciel ; la lueur autour s'ajoute à la lumière sans l'assombrir
+  float alpha = clamp(corps + .25*(bord + halo + anneaux + onde), 0., 1.);
+  gl_FragColor = vec4(c, alpha) * vis;
 }`;
   // les particules : graine (u, v, w, z) + genre (0 = poussière, 1 = étincelle façon PC) ; tout est calculé ici
   const PART_VS = `
@@ -762,7 +763,7 @@ void main(){
   vec3 nuage = pos * (1.25 + .55*g.w + .35*micro) + vec3(sin(t*.7 + g.y*30.), cos(t*.6 + g.x*30.), 0.) * rayon*.12;
   float anneau = step(.72, g.z);
   float aa = ph + t*(.5 + .3*g.w);
-  vec3 bague = vec3(cos(aa), sin(aa)*.30, sin(aa)) * rayon * (1.85 + .10*(g.w - .5) + .12*micro);
+  vec3 bague = vec3(cos(aa), sin(aa)*.30, sin(aa)) * rayon * (1.6 + .10*(g.w - .5) + .10*micro);
   bague = rotZ(bague, -.12);
   pos = mix(pos, mix(nuage, bague, anneau), ec);
   // réflexion : trois orbites gyroscopiques inclinées
@@ -780,7 +781,8 @@ void main(){
   }
   float prof = pos.z / max(length(pos), .001);                         // -1 derrière .. 1 devant
   // derrière le plasma : presque caché
-  float cache = (pos.z < 0. && length(pos.xy) < rayon*.98) ? .12 : 1.;
+  float dedans = step(length(pos.xy), rayon*.98);
+  float cache = pos.z < 0. ? 1. - .88*dedans : 1. - .5*dedans;           // derrière : presque caché ; devant : plus discret sur le plasma
   float sc = .55 + .45*sin(t*3.1 + g.x*61. + g.y*17.);                 // scintillement
   float front = .55 + .45*prof;
   vcol = mix(mix(ca, cb, g.y), cc, step(.9, g.x) * .8 + k*.5);
@@ -800,8 +802,8 @@ void main(){
   gl_FragColor = vec4(c * a, a * .6);
 }`;
   function prog(vsrc, fsrc) {
-    const mk = (ty, src) => { const s = gl.createShader(ty); gl.shaderSource(s, src); gl.compileShader(s);
-      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+    const mk = (ty, src) => { const s = gl.createShader(ty); gl.shaderSource(s, src.replace(/\/\/[^\n]*/g, "")); gl.compileShader(s);   // sans les commentaires (accents refusés par certains pilotes)
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error((ty === gl.VERTEX_SHADER ? "VS " : "FS ") + gl.getShaderInfoLog(s) + " lost=" + gl.isContextLost()); return s; };
     const p = gl.createProgram(); gl.attachShader(p, mk(gl.VERTEX_SHADER, vsrc)); gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fsrc));
     gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
     const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
@@ -858,6 +860,7 @@ void main(){
     gl.uniform1f(u.t, tt); gl.uniform1f(u.taille, (cur.ta + souffle) * ECH); gl.uniform1f(u.energie, cur.en + .15 * voixFort);
     gl.uniform1f(u.parle, parle); gl.uniform1f(u.flash, flash); gl.uniform1f(u.vis, vac);
     gl.uniform3fv(u.c1, cur.c1); gl.uniform3fv(u.c2, cur.c2);
+    for (let i = ondes.length - 1; i >= 0; i--) if (now - ondes[i].t0 >= ondes[i].d) ondes.splice(i, 1);
     const od = ondes[ondes.length - 1], oq = od ? Math.min(1, (now - od.t0) / od.d) : 1;
     gl.uniform1f(u.ondeQ, oq); gl.uniform1f(u.ondeA, od ? .9 : 0); gl.uniform3fv(u.ondeC, od ? od.c : [1, 1, 1]);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
