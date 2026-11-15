@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="6a0327c8ce366d29">
+<meta name="nova-version" content="f871e37107870a7b">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -2403,7 +2403,11 @@ async function expliquerMicro() {
 }
 try { navigator.permissions.query({ name: "microphone" }).then(p => { p.onchange = () => { if (p.state === "granted" && avisMicro && !micErreur) { avisMicro = false; avis(""); } }; }).catch(() => {}); } catch (x) {}
 const micOuvert = () => !!(micFlux && micFlux.getAudioTracks().some(t => t.readyState === "live"));
-const MIC_OPTIONS = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } };
+// 2026-11-15 SON NET : avec echoCancellation (ou les traitements du téléphone), Chrome Android passe TOUT l'audio en mode « appel »
+// (MODE_IN_COMMUNICATION) tant que le micro est ouvert : voix de Nova, vidéos et morceaux sortaient étouffés. Micro BRUT = son média normal.
+// L'anti-écho ne dépend pas de ça : la piste est coupée pendant que Nova parle (micActif) + 0,95 s avant de réécouter ; une page
+// « montrer » ouverte exige le mot « Nova » en mains libres (envoyerVoix). Le mode vidéo Gemini garde son propre anti-écho (video.js).
+const MIC_OPTIONS = { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } };
 function noterErreurMicro(x, etape) { micErreur = (x && x.name) || "Error"; micDetail = (x && x.message) || String(x || ""); micEtape = etape; try { console.warn("[Nova micro]", etape, micErreur, micDetail); } catch (y) {} }
 async function brancherMicro(f) {   // le flux est là : l'analyseur pour la détection de voix (une erreur ici n'est PAS un refus du micro)
   fermerMicro();
@@ -2440,6 +2444,15 @@ function fermerMicro() {
   if (micCtx) { try { micCtx.close(); } catch (x) {} micCtx = null; micAn = null; }
 }
 function micActif(b) { if (micFlux) micFlux.getAudioTracks().forEach(t => { try { t.enabled = b; } catch (x) {} }); }   // coupé pendant la voix de Nova : pas d'écho
+function montreAvecSon() {   // une page « montrer » (vidéo, morceau, jeu) est ouverte par-dessus : elle peut jouer du son
+  try { const o = window.NovaMontrer && NovaMontrer._etat && NovaMontrer._etat().ouvert; return !!(o && o.type !== "image"); } catch (x) { return false; }
+}
+// 2026-11-15 : hors mains libres, un micro resté ouvert sans écoute (toucher puis glissé, etc.) est rendu au bout de ~6 s
+let micInutile = 0, fenetreReveil = 0;   // fenetreReveil : 20 s après un « Nova » dit par lui (pas après une réponse de Nova)
+setInterval(() => {
+  if (!mainsLibres && micOuvert() && !micOuvre && local !== "ecoute" && !enreg) { if (++micInutile >= 3) { micInutile = 0; fermerMicro(); maj(); } }
+  else micInutile = 0;
+}, 2000);
 const BRUIT_VOIX = /^(merci|merci beaucoup|merci d'avoir regardé|au revoir|à bientôt|ok|oui|hum|euh)$/i;
 function envoyerVoix(brut, manuel) {   // mot de réveil « Nova » + filtre des hallucinations de Whisper sur du bruit
   let t = (brut || "").trim();
@@ -2448,11 +2461,11 @@ function envoyerVoix(brut, manuel) {   // mot de réveil « Nova » + filtre des
   if (!manuel && mainsLibres) {
     const nu = t.replace(/[.!?…,;:]+/g, "").trim();
     if (nu.length < 3 || BRUIT_VOIX.test(nu) || /sous.?titr|amara\.org|abonne/i.test(t)) return rejeter();
-    if (reveilNova && Date.now() > fenetreJusqua) {
+    if ((reveilNova && Date.now() > fenetreJusqua) || (montreAvecSon() && Date.now() > fenetreReveil)) {   // 2026-11-15 : page/morceau montré ouvert = le micro brut l'entend, donc « Nova » obligatoire
       const m = t.match(/^\W*(?:(?:dis|hey|hé|eh|ok|salut|bonjour|oh)\s+)?(?:nova|nouva|noba|nover|novas?)\b[\s,.!?:;-]*([\s\S]*)$/i);
       if (!m) return rejeter();
       t = m[1].trim();
-      fenetreJusqua = Date.now() + 20000;
+      fenetreJusqua = Date.now() + 20000; fenetreReveil = fenetreJusqua;
       if (!t) { toast("Oui ? Je t'écoute.", 2500); return rejeter(); }
     }
   }
