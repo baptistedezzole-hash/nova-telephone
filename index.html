@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="9f088255324af4d5">
+<meta name="nova-version" content="98b507ea97172b59">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -2223,7 +2223,11 @@ function majUsage(u) {
     const actif = u.moteur === cle ? 1 : .7;
     return `<span style="opacity:${actif};white-space:nowrap">${nom} ${t}</span>`;
   };
-  el.innerHTML = [bloc("Claude", "claude", "sem", "5h"), bloc("GPT", "chatgpt", "sem", "5h"), bloc("Gemini", "gemini", "", "jour")].filter(Boolean).join('<span style="opacity:.35"> &nbsp;|&nbsp; </span>');
+  // 2026-11-17 fable : sa jauge de la semaine à lui ; pas de chiffre du serveur = « inconnu » (jamais inventé)
+  const fable = !u.fable ? "" : u.fable.sem == null
+    ? `<span style="opacity:${u.moteur === "claude" ? 1 : .7};white-space:nowrap">Fable <i style="font-weight:500">inconnu</i></span>`
+    : `<span style="opacity:${u.moteur === "claude" ? 1 : .7};white-space:nowrap">Fable ${pc("sem", u.fable.sem)}</span>`;
+  el.innerHTML = [bloc("Claude", "claude", "sem", "5h"), fable, bloc("GPT", "chatgpt", "sem", "5h"), bloc("Gemini", "gemini", "", "jour")].filter(Boolean).join('<span style="opacity:.35"> &nbsp;|&nbsp; </span>');
 }
 function ouvrirSaisie() { fermerFeuilles(); arreterEcoute(); if (dejaTape) { $("champ").value = dejaTape; dejaTape = ""; } $("saisie").classList.add("vu"); setTimeout(() => { $("champ").focus(); posBrouillon(); }, 60); posBrouillon(); vib(5); maj(); }
 function fermerSaisie() { $("saisie").classList.remove("vu"); $("champ").blur(); posBrouillon(); }
