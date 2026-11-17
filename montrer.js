@@ -71,8 +71,25 @@
   const scene = P.querySelector(".scene"), msg = P.querySelector(".msg"), items = P.querySelector(".items");
 
   let partages = [], ouvert = null, vue = null, rot = null, ticket = 0;
+  // 2026-11-17 bouton ✦ : « vu » et « dernier ouvert » gardés sur le PC par appareil (srv, renvoyés par /api/montrer/liste,
+  // notés par /api/montrer/ouvrir) ET ici en secours (localStorage). Le PC fait foi quand il les donne.
+  let srv = { vus: [], dernier: null, connu: false }, frais = null;   // frais = ouverture toute fraîche, pas encore relue du PC
   const lireVus = () => { try { return JSON.parse(localStorage.getItem("nova-montre-vus") || "[]"); } catch (x) { return []; } };
-  const noterVu = id => { try { const v = lireVus().filter(x => x !== id); v.push(id); localStorage.setItem("nova-montre-vus", JSON.stringify(v.slice(-40))); } catch (x) {} };
+  const lireDernier = () => { try { return localStorage.getItem("nova-montre-dernier") || null; } catch (x) { return null; } };
+  const vusTous = () => { const v = lireVus(); for (const x of srv.vus) if (!v.includes(x)) v.push(x); return v; };
+  const noterVu = id => {
+    try { const v = lireVus().filter(x => x !== id); v.push(id); localStorage.setItem("nova-montre-vus", JSON.stringify(v.slice(-40))); } catch (x) {}
+    try { localStorage.setItem("nova-montre-dernier", id); } catch (x) {}
+    srv.vus = srv.vus.filter(x => x !== id).concat(id); srv.dernier = id;
+    frais = { id, t: Date.now() };
+  };
+  // Le bouton ✦ : la plus récente pas encore vue (= nouvelle, montrée il y a moins de 6 h), sinon la dernière qu'il a
+  // lui-même ouverte (même plus ancienne dans la liste), sinon la plus récente. partages = du plus récent au plus ancien.
+  function choisirBouton(partages, vus, dernier, maintenant) {
+    const neuves = partages.filter(p => !vus.includes(p.id) && maintenant - p.t * 1000 < RECENT).sort((x, y) => y.t - x.t);
+    if (neuves.length) return neuves[0];
+    return partages.find(p => p.id === dernier) || partages[0] || null;
+  }
   const dire = t => { msg.textContent = t || ""; msg.classList.toggle("vu", !!t); };
   const heure = t => { try { return new Date(t * 1000).toLocaleString("fr-FR", { weekday: "short", hour: "2-digit", minute: "2-digit" }); } catch (x) { return ""; } };
 
@@ -82,7 +99,7 @@
     if (!ref || !ref.parentNode) return;
     const b = document.createElement("button");
     b.id = "btnMontre"; b.type = "button"; b.setAttribute("aria-label", "Ce que Nova m'a montré"); b.textContent = "✦";
-    b.onclick = () => { if (partages.length) ouvrir(partages[0], true); };
+    b.onclick = () => { const p = choisirBouton(partages, vusTous(), (srv.connu && srv.dernier) || lireDernier(), Date.now()); if (p) ouvrir(p, true); };
     ref.parentNode.insertBefore(b, ref);
   }
 
@@ -177,7 +194,7 @@
     if (ouvert || P.classList.contains("vu")) return;
     if (document.visibilityState !== "visible") return;
     const bur = $("bur"); if (bur && bur.classList.contains("vu")) return;   // la prise en main du PC passe avant
-    const vus = lireVus();
+    const vus = vusTous();
     const a = partages.filter(p => !vus.includes(p.id) && Date.now() - p.t * 1000 < RECENT).sort((x, y) => x.t - y.t)[0];
     if (a) ouvrir(a, false);
   }
@@ -192,6 +209,10 @@
       if (!r.ok) return;
       const d = await r.json();
       partages = Array.isArray(d.partages) ? d.partages.filter(p => p && typeof p.id === "string") : [];
+      if (Array.isArray(d.vus)) {   // PC à jour : son état fait foi (sans écraser une ouverture toute fraîche pas encore notée)
+        srv = { vus: d.vus.filter(x => typeof x === "string"), dernier: typeof d.dernier === "string" ? d.dernier : null, connu: true };
+        if (frais && Date.now() - frais.t < 15000) { srv.vus = srv.vus.filter(x => x !== frais.id).concat(frais.id); srv.dernier = frais.id; }
+      }
       poserBouton();
       const b = $("btnMontre"); if (b) b.classList.toggle("vu", partages.length > 0);
       if (P.classList.contains("liste-on")) rendreListe();
@@ -224,7 +245,7 @@
   document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) P.classList.remove("plein"); setTimeout(disposer, 60); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { pause = 0; sonder(); } });
 
-  window.NovaMontrer = { ouvrir: id => ouvrir(partages.find(p => p.id === id), true), fermer, sonder, _etat: () => ({ partages, ouvert, rot }) };
+  window.NovaMontrer = { ouvrir: id => ouvrir(partages.find(p => p.id === id), true), fermer, sonder, _etat: () => ({ partages, ouvert, rot, srv }), _choisir: choisirBouton };
   poserBouton();
   setTimeout(sonder, 1500);
   setInterval(sonder, 4000);
