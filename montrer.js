@@ -140,6 +140,9 @@
       if (ouvert.taille) { [w, h] = ouvert.taille; }
       else { w = tourne ? ah : aw; h = tourne ? aw : ah; }
       const s = ouvert.taille ? (tourne ? Math.min(aw / h, ah / w) : Math.min(aw / w, ah / h)) : 1;
+      const cle = w + "x" + h + "/" + tourne + "/" + s;   // 17/11 : rien ne change = on ne touche pas l'iframe (pas de relayout de la vidéo)
+      if (vue.dataset.pose === cle) return;
+      vue.dataset.pose = cle;
       vue.style.width = w + "px"; vue.style.height = h + "px";
       vue.style.transform = `translate(-50%,-50%) rotate(${tourne ? 90 : 0}deg) scale(${s})`;
     } else {
@@ -154,6 +157,20 @@
     ticket++;
     if (vue) { try { vue.src = "about:blank"; } catch (x) {} vue.remove(); vue = null; }
     P.classList.remove("clavier");
+    if (verrouPose) orienter(false, 0);
+  }
+
+  // 17/11 : la page montrée (cadre protégé) n'a pas le droit de verrouiller l'écran elle-même ; elle le demande ici.
+  // Vrai paysage = le clavier du téléphone tourne aussi, et écrire ne remet plus en portrait.
+  let verrouPose = false;
+  function orienter(paysage, n) {
+    let p = Promise.resolve(false);
+    try {
+      const o = screen.orientation;
+      if (paysage && o && o.lock) p = o.lock("landscape").then(() => { verrouPose = true; return true; }, () => false);
+      else if (!paysage) { verrouPose = false; if (o && o.unlock) o.unlock(); }
+    } catch (x) {}
+    p.then(ok => { if (n && vue && vue.contentWindow) { try { vue.contentWindow.postMessage({ nova: "montre-orientation", n, ok }, "*"); } catch (x) {} } });
   }
 
   async function ouvrir(p, main) {
@@ -264,6 +281,7 @@
   addEventListener("message", e => {
     if (!vue || vue.tagName !== "IFRAME" || e.source !== vue.contentWindow) return;
     const d = e.data || {};
+    if (d.nova === "montre" && typeof d.orientation === "string") return orienter(d.orientation === "paysage", typeof d.n === "number" ? d.n : 0);
     if (d.nova === "montre" && d.clavier === true) P.classList.add("clavier");
   });
   addEventListener("resize", () => { disposer(); setTimeout(disposer, 250); });

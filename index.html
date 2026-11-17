@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="98b507ea97172b59">
+<meta name="nova-version" content="c779d7d0a0ed3c4f">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -1069,6 +1069,9 @@ function image(now) {
   // seul le ciel, qui bouge lentement, passe à mi-cadence
   const dt = Math.min(.05, (now - avant) / 1000); avant = now;
   if ((++verifTaille & 31) === 0 && (largeurVue() !== CW || hauteurVue() !== CH || !ov.width)) tailler();   // taille manquée (ouverture, clavier, rotation)
+  // 17/11 (« la vidéo freeze quand j'appuie, quand j'écris ») : une page montrée ou le bureau du PC couvre tout l'écran ->
+  // on ne dessine plus l'orbe ni le ciel en dessous (invisibles) : le téléphone garde sa force pour la vidéo et la frappe
+  if (couvert()) { majBouton(); return; }
   const t0 = performance.now();
   cielDt += dt; impaire = !impaire;
   if (impaire) { dessinerCiel(now, cielDt); cielDt = 0; }   // le ciel bouge lentement : 30 i/s lui suffisent
@@ -1076,6 +1079,10 @@ function image(now) {
   majSousTitre(now);
   majBouton();
   mesure.n++; mesure.cout += performance.now() - t0;
+}
+function couvert() {
+  const m = document.getElementById("montre"), b = document.getElementById("bur");
+  return !!((m && m.classList.contains("vu") && m.classList.contains("on")) || (b && b.classList.contains("vu")));
 }
 function tailler() { tailleCiel(); tailleOrbe(); placerAgents(); }
 addEventListener("resize", () => { clearTimeout(tailler.t); tailler.t = setTimeout(tailler, 120); });
