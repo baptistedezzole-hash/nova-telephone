@@ -1,6 +1,6 @@
 // Nova sur le téléphone : « MONTRE-LE-MOI » (2026-11-13). Nova montre ici une page HTML du PC (jouable au toucher) ou
 // une image : telephone.py montrer <chemin> [titre] [--paysage]. Un panneau étoilé s'ouvre tout seul quand l'appli est
-// ouverte ; croix pour fermer, ✦ dans l'en-tête = « déjà montré ». Toucher = clic ; bouton R si la page écoute le clavier.
+// ouverte ; croix pour fermer, ✦ dans l'en-tête = « déjà montré », ✎ = écrire à Nova sans quitter la page. Toucher = clic ; bouton R si la page écoute le clavier.
 // Chargé par index.html via /api/montrer/script (servi par le PC), sinon montrer.js (adresse fixe).
 // Côté PC : outils\telephone_montrer.py. La page montrée vit dans une iframe SANDBOXÉE (origine opaque, CSP du PC) :
 // elle ne voit ni le jeton ni les réglages de l'appli ; ses fichiers passent par un ticket lié à cet appareil.
@@ -54,6 +54,27 @@
 #montre .msg { position:absolute; z-index:1; left:50%; top:50%; transform:translate(-50%,-50%); max-width:min(84vw,380px); padding:14px 18px; border-radius:14px;
   background:rgba(10,14,30,.88); border:1px solid rgba(255,255,255,.12); font-size:14px; line-height:1.4; text-align:center; display:none; }
 #montre .msg.vu { display:block; }
+#montre .mot { position:absolute; z-index:3; top:calc(env(safe-area-inset-top,0px) + 50px); right:calc(10px + env(safe-area-inset-right,0px));
+  width:min(calc(100vw - 32px),340px); padding:10px; border-radius:16px; background:rgba(10,13,26,.95); border:1px solid rgba(233,214,168,.22);
+  box-shadow:0 12px 40px rgba(0,0,0,.55),0 0 30px rgba(233,214,168,.06); display:none; box-sizing:border-box; }
+#montre.mot-on .mot { display:block; animation:motVient .22s ease-out; }
+@keyframes motVient { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
+#montre .mot h4 { margin:2px 4px 8px; font:500 10px/1.3 var(--mono,ui-monospace,monospace); letter-spacing:.16em; text-transform:uppercase; color:rgba(226,232,246,.45);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#montre .mot h4 b { color:#e9d6a8; font-weight:500; }
+#montre .mot textarea { display:block; width:100%; box-sizing:border-box; min-height:76px; max-height:32vh; resize:none; padding:10px 12px; border-radius:12px;
+  border:1px solid rgba(255,255,255,.12); background:rgba(2,3,10,.7); color:rgba(226,232,246,.95); font:400 15px/1.4 var(--sans,system-ui,sans-serif); outline:none; }
+#montre .mot textarea:focus { border-color:rgba(233,214,168,.45); }
+#montre .mot .actions { display:flex; justify-content:flex-end; gap:8px; margin-top:8px; }
+#montre .mot .actions button { height:34px; padding:0 14px; border-radius:999px; border:1px solid rgba(255,255,255,.14); background:rgba(10,14,30,.75); color:inherit;
+  font:600 12.5px/1 var(--sans,system-ui,sans-serif); }
+#montre .mot .actions .partir { border-color:rgba(233,214,168,.5); color:#e9d6a8; background:rgba(233,214,168,.12); }
+#montre .mot .actions .partir:disabled { opacity:.4; }
+#montre .mot .actions button:active { transform:scale(.94); }
+#montre .pastille { position:absolute; z-index:4; left:50%; top:calc(env(safe-area-inset-top,0px) + 54px); transform:translate(-50%,-6px); max-width:calc(100vw - 48px);
+  padding:7px 14px; border-radius:999px; background:rgba(10,14,30,.92); border:1px solid rgba(233,214,168,.3); color:#e9d6a8;
+  font:500 12.5px/1.3 var(--sans,system-ui,sans-serif); opacity:0; pointer-events:none; transition:opacity .25s, transform .25s; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#montre .pastille.vu { opacity:1; transform:translate(-50%,0); }
 `;
   const st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
   const P = document.createElement("div");
@@ -63,10 +84,14 @@
 <button class="tourner" aria-label="Pivoter">⟳</button>
 <button class="agrandir" aria-label="Plein écran">⤢</button>
 <button class="histo" aria-label="Déjà montré">✦</button>
+<button class="ecrire" aria-label="Écrire à Nova">✎</button>
 <button class="fermer" aria-label="Fermer">✕</button></div>
 <button class="poignee" aria-label="Montrer les boutons">✦</button>
 <div class="scene"><div class="msg"></div></div>
-<div class="liste"><h4>Déjà montré</h4><div class="items"></div></div>`;
+<div class="liste"><h4>Déjà montré</h4><div class="items"></div></div>
+<div class="mot"><h4>Écrire à Nova · <b></b></h4><textarea rows="3" maxlength="8000" placeholder="Ton message…" aria-label="Message pour Nova"></textarea>
+<div class="actions"><button class="laisser" type="button">Plus tard</button><button class="partir" type="button" disabled>Envoyer ➤</button></div></div>
+<div class="pastille" role="status" aria-live="polite"></div>`;
   document.body.appendChild(P);
   const scene = P.querySelector(".scene"), msg = P.querySelector(".msg"), items = P.querySelector(".items");
 
@@ -137,7 +162,7 @@
     fermerVue(); ticket = n;
     ouvert = p; rot = null; noterVu(p.id);
     P.querySelector(".titre span").textContent = p.titre || "Nova te montre";
-    P.classList.remove("liste-on", "plein");
+    P.classList.remove("liste-on", "plein", "mot-on");
     P.classList.add("vu"); requestAnimationFrame(() => P.classList.add("on"));
     rendreListe(); dire("Ça arrive…");
     let d = null;
@@ -172,7 +197,7 @@
 
   function fermer() {
     fermerVue(); ouvert = null;
-    P.classList.remove("on", "liste-on");
+    P.classList.remove("on", "liste-on", "mot-on");
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     setTimeout(() => { if (!ouvert) P.classList.remove("vu"); suivant(); }, 380);
   }
@@ -221,7 +246,7 @@
   }
 
   P.querySelector(".fermer").onclick = fermer;
-  P.querySelector(".histo").onclick = () => { rendreListe(); P.classList.toggle("liste-on"); };
+  P.querySelector(".histo").onclick = () => { rendreListe(); P.classList.remove("mot-on"); P.classList.toggle("liste-on"); };
   P.querySelector(".tourner").onclick = () => {
     const r = scene.getBoundingClientRect();
     const veut = ouvert && (ouvert.paysage || (ouvert.taille && ouvert.taille[0] > ouvert.taille[1]));
@@ -229,13 +254,13 @@
     rot = !actuel; disposer();
   };
   P.querySelector(".agrandir").onclick = () => {
-    P.classList.add("plein"); P.classList.remove("liste-on");
+    P.classList.add("plein"); P.classList.remove("liste-on", "mot-on");
     try { if (P.requestFullscreen && !document.fullscreenElement) P.requestFullscreen().then(() => { try { screen.orientation.lock("landscape").catch(() => {}); } catch (x) {} }).catch(() => {}); } catch (x) {}
     setTimeout(disposer, 60); setTimeout(disposer, 400);
   };
   P.querySelector(".poignee").onclick = () => { P.classList.remove("plein"); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); setTimeout(disposer, 60); setTimeout(disposer, 400); };
   P.querySelector(".r").onclick = () => { try { vue && vue.contentWindow && vue.contentWindow.postMessage({ nova: "touche", key: "r", code: "KeyR" }, "*"); } catch (x) {} };
-  scene.addEventListener("click", e => { if (e.target === scene) P.classList.remove("liste-on"); });
+  scene.addEventListener("click", e => { if (e.target === scene) { P.classList.remove("liste-on"); if (!zone.value.trim()) P.classList.remove("mot-on"); } });
   addEventListener("message", e => {
     if (!vue || vue.tagName !== "IFRAME" || e.source !== vue.contentWindow) return;
     const d = e.data || {};
@@ -245,7 +270,86 @@
   document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) P.classList.remove("plein"); setTimeout(disposer, 60); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { pause = 0; sonder(); } });
 
-  window.NovaMontrer = { ouvrir: id => ouvrir(partages.find(p => p.id === id), true), fermer, sonder, _etat: () => ({ partages, ouvert, rot, srv }), _choisir: choisirBouton };
+  // 2026-11-17 bouton ✎ « Écrire à Nova » (dans la barre, à côté de la croix) : un message GÉNÉRAL, sans quitter la page.
+  // Il part par la même file que les messages écrits de l'appli (Sortie d'index.html : gardé dans IndexedDB, renvoyé tout
+  // seul tant que le PC ne répond pas, sans doublon grâce au mid), conv « nova », avec le nom de la page en tête.
+  // Secours si la file de l'appli manque : petite file locale (localStorage) renvoyée de la même façon vers /api/message.
+  const mot = P.querySelector(".mot"), zone = mot.querySelector("textarea"), partir = mot.querySelector(".partir"), pastille = P.querySelector(".pastille");
+  const composer = (texte, titre) => `[Écrit sur le téléphone depuis la page « ${titre || "Nova te montre"} »] ${texte}`;
+  let pastT = 0;
+  const annoncer = (t, ms = 2600) => { pastille.textContent = t; pastille.classList.add("vu"); clearTimeout(pastT); pastT = setTimeout(() => pastille.classList.remove("vu"), ms); };
+  const garderBrouillon = t => { try { t ? localStorage.setItem("nova-montre-mot", t) : localStorage.removeItem("nova-montre-mot"); } catch (x) {} };
+  const ajusterZone = () => { zone.style.height = "auto"; zone.style.height = Math.min(zone.scrollHeight + 2, innerHeight * 0.32) + "px"; partir.disabled = !zone.value.trim(); };
+  function ouvrirMot() {
+    mot.querySelector("h4 b").textContent = (ouvert && ouvert.titre) || "Nova te montre";
+    if (!zone.value) { try { zone.value = localStorage.getItem("nova-montre-mot") || ""; } catch (x) {} }
+    P.classList.remove("liste-on"); P.classList.add("mot-on"); ajusterZone();
+    setTimeout(() => { try { zone.focus(); } catch (x) {} }, 40);
+  }
+  function fermerMot() { P.classList.remove("mot-on"); try { zone.blur(); } catch (x) {} }
+
+  const FILE = "nova-montre-mots";   // secours seulement
+  const lireFile = () => { try { return JSON.parse(localStorage.getItem(FILE) || "[]"); } catch (x) { return []; } };
+  const ecrireFile = l => { try { localStorage.setItem(FILE, JSON.stringify(l.slice(-30))); } catch (x) {} };
+  let videEnCours = false;
+  async function viderFile() {
+    if (videEnCours) return; videEnCours = true;
+    try {
+      for (const it of lireFile()) {
+        let ok = false, net = false;
+        try {
+          const h = { "Content-Type": "application/json" }; if (NA.jeton) h["X-Nova-Jeton"] = NA.jeton;
+          const r = await fetch("/api/message", { method: "POST", headers: h, credentials: "same-origin", body: JSON.stringify({ texte: it.texte, conv: "nova", mid: it.mid }) });
+          const d = r.ok ? await r.json().catch(() => null) : null;
+          ok = !!(d && d.ok);
+        } catch (x) { net = true; }
+        const l = lireFile(), i = l.findIndex(x => x.mid === it.mid);
+        if (i < 0) continue;
+        if (ok) l.splice(i, 1);
+        else { l[i].essais = (l[i].essais || 0) + 1; if (l[i].essais >= 40) { l[i].perdu = true; l.splice(i, 1); } }
+        ecrireFile(l);
+        if (!ok && net) break;   // pas de réseau : on retentera tout plus tard, dans l'ordre
+      }
+    } finally { videEnCours = false; }
+  }
+  async function deposer(texte) {
+    if (typeof Sortie !== "undefined" && Sortie && typeof Sortie.ajouter === "function") {
+      try { if (sessionSeq === Infinity) sessionSeq = seq; } catch (x) {}   // comme envoyer() de l'appli : la réponse sera lue ici aussi
+      const it = await Sortie.ajouter({ kind: "texte", texte, conv: "nova" });
+      Sortie.vider();
+      return () => !Sortie._mem.has(it.mid) && !it.annule && !((it.essais || 0) >= 20);
+    }
+    const mid = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 12));
+    ecrireFile(lireFile().concat({ mid, texte, t: Date.now() }));
+    viderFile();
+    return () => !lireFile().some(x => x.mid === mid);
+  }
+  async function envoyerMot() {
+    const texte = zone.value.trim(); if (!texte) return;
+    const corps = composer(texte, ouvert && ouvert.titre);
+    zone.value = ""; garderBrouillon(""); ajusterZone(); fermerMot();
+    try { navigator.vibrate && navigator.vibrate(8); } catch (x) {}
+    annoncer("Envoi à Nova…", 9000);
+    let recu;
+    try { recu = await deposer(corps); } catch (x) { zone.value = texte; garderBrouillon(texte); return annoncer("Pas pu garder le message : réessaie.", 4000); }
+    const debut = Date.now(); let prevenu = false;
+    const t = setInterval(() => {
+      if (recu()) { clearInterval(t); return annoncer("✓ Reçu par Nova", 2400); }
+      if (!prevenu && Date.now() - debut > 6000) { prevenu = true; annoncer("Le PC ne répond pas encore : ton message est gardé, il partira tout seul.", 5000); }
+      if (Date.now() - debut > 15 * 60000) clearInterval(t);
+    }, 600);
+  }
+  P.querySelector(".ecrire").onclick = () => P.classList.contains("mot-on") ? fermerMot() : ouvrirMot();
+  mot.querySelector(".laisser").onclick = fermerMot;
+  partir.onclick = envoyerMot;
+  zone.addEventListener("input", () => { ajusterZone(); garderBrouillon(zone.value); });
+  zone.addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); envoyerMot(); } else if (e.key === "Escape") fermerMot(); });
+  setInterval(() => { if (lireFile().length && document.visibilityState === "visible") viderFile(); }, 8000);
+  addEventListener("online", () => setTimeout(viderFile, 1200));
+  if (lireFile().length) setTimeout(viderFile, 4000);
+
+  window.NovaMontrer = { ouvrir: id => ouvrir(partages.find(p => p.id === id), true), fermer, sonder, _etat: () => ({ partages, ouvert, rot, srv }), _choisir: choisirBouton,
+    ecrire: ouvrirMot, _composer: composer, _fileMots: lireFile };
   poserBouton();
   setTimeout(sonder, 1500);
   setInterval(sonder, 4000);
