@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="022f3124735b6af4">
+<meta name="nova-version" content="f5d5a41f25e68067">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -1899,6 +1899,7 @@ const Sortie = (() => {
               planifier(6000); return;
             }
             coupure = false;
+            if (r && r.occupe) { planifier(4000); return; }   // 2026-11-20 : whisper occupé par une autre dictée = attendre son tour, jamais un échec
             if (r && r.erreur && !r.texte) { bl.essais = (bl.essais || 0) + 1; if (bl.essais < 40) { planifier(5000); return; } }
             bl.texte = (r && r.texte) || ""; bl.blob = null; await sauver(it);
           }
