@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="f5d5a41f25e68067">
+<meta name="nova-version" content="3f4430d4137fce8a">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -1443,6 +1443,7 @@ $("fil").addEventListener("click", ev => {   // toucher une réponse : la rééc
 
 const vusAgents = new Set(JSON.parse(lire("nova-agents-vus", "[]")));
 function agents(liste) {
+  liste = liste.filter(a => !(a.fini && vusAgents.has(a.id)));   // étoiles finies déjà rangées sur CE téléphone : plus affichées (sinon « N finis » reste bloqué à l'écran)
   const cle = JSON.stringify(liste.map(a => [a.id, a.fini, a.outils]));
   agentsListe = liste;
   if (cle === agents.cle) return; agents.cle = cle;
@@ -1469,7 +1470,16 @@ function placerAgents() {
   });
   const fin = L.filter(a => a.fini).length, cours = n - fin;
   const t = el("div", "lbl", [cours ? cours + (cours > 1 ? " agents en cours" : " agent en cours") : "", fin ? fin + (fin > 1 ? " finis" : " fini") : ""].filter(Boolean).join(" · "));
-  t.id = "agentsTxt"; box.appendChild(t);
+  t.id = "agentsTxt";
+  if (fin) {   // toucher « N finis » range les étoiles finies sur CE téléphone (local) : le compteur ne reste plus bloqué
+    t.style.cursor = "pointer"; t.title = "Toucher pour ranger les étoiles finies";
+    t.onclick = () => {
+      agentsListe.forEach(a => { if (a.fini) vusAgents.add(a.id); });
+      garder("nova-agents-vus", JSON.stringify([...vusAgents].slice(-40)));
+      agents.cle = null; vib(10); agents(agentsListe); toast("Étoiles finies rangées.");
+    };
+  }
+  box.appendChild(t);
 }
 function ecouterAgent(a) {
   deverrouillerSon(); arreterEcoute(); fermerFeuilles(); vusAgents.add(a.id); garder("nova-agents-vus", JSON.stringify([...vusAgents].slice(-40)));
