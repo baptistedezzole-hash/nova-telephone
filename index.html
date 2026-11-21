@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="3f4430d4137fce8a">
+<meta name="nova-version" content="57b69b6ca56650da">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -1458,12 +1458,12 @@ function agents(liste) {
   }
 }
 function placerAgents() {
-  const box = $("agents"); box.innerHTML = ""; const L = agentsListe.slice(-8), n = L.length;
+  const box = $("agents"); box.innerHTML = ""; const L = agentsListe, n = L.length;   // 2026-11-21 : AUCUN plafond sur le tel, on montre TOUTES les étoiles
   if (!n) return;
-  const W = box.clientWidth || innerWidth, pas = Math.min(40, (W - 60) / Math.max(1, n));
+  const W = box.clientWidth || innerWidth, pas = Math.min(40, (W - 40) / Math.max(1, n));
   L.forEach((a, i) => {
     const k = i - (n - 1) / 2, b = el("button", "ag" + (a.fini ? " fini" : "")); b.appendChild(el("i"));
-    b.style.left = (W / 2 + k * pas) + "px"; b.style.top = (Math.abs(k) * Math.abs(k) * 2.2 + 4) + "px"; b.style.animationDelay = (i * 60) + "ms";
+    b.style.left = (W / 2 + k * pas) + "px"; b.style.top = (Math.min(46, Math.abs(k) * Math.abs(k) * 2.2) + 4) + "px"; b.style.animationDelay = (i * 60) + "ms";   // arc borné pour rester joli avec beaucoup d'étoiles
     b.setAttribute("aria-label", a.texte);
     b.onclick = () => { vib(6); if (a.fini) ecouterAgent(a); else toast("✦ " + a.texte + (a.outils ? " · " + a.outils + " actions" : " · en cours")); };
     box.appendChild(b);
