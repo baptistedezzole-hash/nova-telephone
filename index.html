@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="57b69b6ca56650da">
+<meta name="nova-version" content="cede544ec1260c93">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -680,10 +680,9 @@ function tailleOrbe() {
 }
 
 // =====================================================================================================
-// L'ORBE EN WEBGL : 17/11 « exactement la même étoile que le PC ». Le shader FS ci-dessous est la COPIE MOT POUR MOT de
-// celui de interface\commun\orbe-v2.js (l'orbe du PC en thème V2), avec les mêmes couleurs d'état et les mêmes lissages
-// que la boucle d'image de interface\orbe.html. Toute retouche de l'étoile du PC doit être recopiée ici à l'identique.
-// En plus du PC : les particules du téléphone qui gravitent autour (il les aime). La finesse s'adapte si le téléphone peine (moins de pixels, jamais d'image qui saute).
+// L'ORBE EN WEBGL : le plasma de l'orbe du PC (même shader, mêmes couleurs) + des milliers de particules
+// qui gravitent autour (l'esprit du prototype « fluide ») : coque qui tourne, écoute = nuage dispersé + anneau,
+// réflexion = trois orbites inclinées, parole = ondes. Positions calculées dans le shader : rien à simuler côté JS.
 // Repli automatique sur l'étoile 2D si WebGL manque ou se perd.
 // =====================================================================================================
 const orbeGl = (() => {
@@ -692,119 +691,88 @@ const orbeGl = (() => {
   let gl = null;
   try { gl = cv.getContext("webgl", { premultipliedAlpha: true, alpha: true, antialias: false, powerPreference: "low-power" }); } catch (e) {}
   if (!gl) return o;
-  // couleurs des états : la palette V2 du PC (commun\orbe-v2.js)
+  // couleurs du plasma (orbe du PC) et des particules (prototype fluide)
   const ET = {
-    demarrage:  { c1: [0.82, 0.80, 1.00], c2: [0.52, 0.48, 0.92], taille: 0.50, energie: 0.20, vitesse: 0.40 },
-    repos:      { c1: [1.00, 0.90, 0.80], c2: [1.00, 0.60, 0.84], taille: 0.52, energie: 0.22, vitesse: 0.35 },
-    ecoute:     { c1: [0.66, 0.92, 1.00], c2: [0.34, 0.62, 1.00], taille: 0.70, energie: 0.55, vitesse: 0.90 },
-    envoi:      { c1: [0.92, 0.95, 1.00], c2: [0.62, 0.56, 1.00], taille: 0.66, energie: 0.80, vitesse: 1.40 },
-    reflechit:  { c1: [1.00, 0.70, 0.40], c2: [0.92, 0.34, 0.78], taille: 0.64, energie: 0.80, vitesse: 1.60 },
-    parle:      { c1: [1.00, 0.86, 0.94], c2: [0.82, 0.50, 1.00], taille: 0.68, energie: 0.60, vitesse: 1.10 },
-    permission: { c1: [1.00, 0.88, 0.58], c2: [0.96, 0.66, 0.30], taille: 0.64, energie: 0.50, vitesse: 0.80 },
-    connexion:  { c1: [1.00, 0.56, 0.46], c2: [0.72, 0.26, 0.42], taille: 0.56, energie: 0.35, vitesse: 0.60 },
-    erreur:     { c1: [1.00, 0.42, 0.30], c2: [0.60, 0.16, 0.20], taille: 0.48, energie: 0.22, vitesse: 0.45 },
+    demarrage: { c1: [.35,.30,.55], c2: [.15,.12,.30], ta: .55, en: .25, vi: .4,  a: [.35,.3,.6],  b: [.2,.15,.4],   c: [.6,.6,1] },
+    repos:     { c1: [.62,.32,.95], c2: [.95,.40,.65], ta: .50, en: .20, vi: .35, a: [.55,.30,1],  b: [1,.40,.74],   c: [.45,.88,1] },
+    ecoute:    { c1: [.25,.85,1],   c2: [.55,.35,1],   ta: .78, en: .55, vi: 1.0, a: [.22,.78,1],  b: [.48,.38,1],   c: [.85,.97,1] },
+    envoi:     { c1: [.85,.90,1],   c2: [.55,.40,1],   ta: .70, en: .9,  vi: 1.6, a: [.85,.9,1],   b: [.55,.45,1],   c: [1,1,1] },
+    reflechit: { c1: [1,.55,.25],   c2: [.85,.20,.75], ta: .68, en: .85, vi: 1.8, a: [1,.58,.22],  b: [.92,.24,.75], c: [1,.9,.62] },
+    parle:     { c1: [1,.45,.70],   c2: [.55,.30,1],   ta: .74, en: .6,  vi: 1.2, a: [1,.44,.72],  b: [.58,.34,1],   c: [1,.86,.96] },
+    permission:{ c1: [1,.75,.20],   c2: [.95,.45,.10], ta: .70, en: .6,  vi: 1.0, a: [1,.78,.25],  b: [.95,.45,.12], c: [1,.95,.7] },
+    connexion: { c1: [1,.35,.35],   c2: [.55,.15,.35], ta: .60, en: .4,  vi: .7,  a: [1,.36,.36],  b: [.55,.15,.38], c: [1,.7,.7] },
+    erreur:    { c1: [1,.25,.25],   c2: [.40,.10,.20], ta: .55, en: .3,  vi: .5,  a: [1,.26,.26],  b: [.45,.1,.24],  c: [1,.6,.5] },
   };
-  const VS = `attribute vec2 p; varying vec2 uv; void main(){ uv = p; gl_Position = vec4(p, 0., 1.); }`;
-  const FS = `
+  const VC = ["c1", "c2", "a", "b", "c"], VN = ["ta", "en", "vi"];
+  const cur = {}; for (const k of VC) cur[k] = ET.demarrage[k].slice(); for (const k of VN) cur[k] = ET.demarrage[k];
+  const mode = { ec: 0, pe: 0, pa: 0, nv: 0 };   // écoute, réflexion, parole, envoi (0..1, lissés)
+  const ECH = .88;   // le plasma un peu plus petit que sur le PC : la place pour les particules
+
+  const PLASMA_VS = `attribute vec2 p; varying vec2 uv; void main(){ uv = p; gl_Position = vec4(p, 0., 1.); }`;
+  // 2026-11-14 (orbe2) : le plasma vivant. highp quand l'appareil le permet (en mediump, le bruit se cassait en secteurs) ;
+  // le bruit vient d'une petite texture répétable (4 octaves, une par canal) et les décalages sont enroulés côté JS :
+  // aucun nombre ne grandit dans le shader. Contour qui respire et se déforme, plasma qui coule, cœur chaud ;
+  // en parlant : le contour vibre et la lumière bat avec la voix (plus d'anneaux ni de disques).
+  const PLASMA_FS = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
+#else
+precision mediump float;
+#endif
 varying vec2 uv;
-uniform float t, taille, energie, parle, flash, blanc, vis;
-uniform vec3 c1, c2;
-uniform vec4 m1;   // micro coupé, écoute ouverte, push-to-talk, spirale (réflexion)
-uniform vec4 m2;   // permission, taille d'un pixel, grains visibles, temps réel
-float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f);
-  return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
-const mat2 TOUR = mat2(1.6, 1.2, -1.2, 1.6);
-float fbm(vec2 p){ float v = 0., a = .5; for(int i=0;i<5;i++){ v += a*n(p); p = TOUR*p + 3.1; a *= .5; } return v; }
-float fbm3(vec2 p){ float v = 0., a = .5; for(int i=0;i<3;i++){ v += a*n(p); p = TOUR*p + 1.7; a *= .5; } return v / .875; }
-mat2 rot(float a){ float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
-// une aigrette : très fine en travers (profil 1/|y|), qui s'éteint en douceur vers sa pointe
-float pic(vec2 q, float L, float w){
-  float le = max(0., 1. - abs(q.x)/L);
-  return pow(w/(abs(q.y) + w), 1.7) * le*le*le;
-}
+uniform sampler2D T;
+uniform float taille, energie, parle, voix, flash, vis, ondeQ, ondeA;
+uniform vec2 o1, o2, o3, o4;
+uniform vec3 c1, c2, ondeC;
+float fb(vec2 q){ return dot(texture2D(T, q), vec4(.46, .28, .16, .10)); }
 void main(){
-  float muet = m1.x, ouv = m1.y, ptt = m1.z, spir = m1.w, perm = m2.x, px = m2.y, grains = m2.z, T = m2.w;
   vec2 p = uv;
   float r = length(p);
-  vec2 dir = p / max(r, 1e-4);
-  // couleurs de l'état (push-to-talk : ambre ; micro coupé : naine blanche grise)
-  vec3 ca = mix(c1, vec3(1., .74, .46), ptt*.85), cb = mix(c2, vec3(1., .52, .26), ptt*.85);
-  ca = mix(ca, vec3(.86, .88, .95), muet); cb = mix(cb, vec3(.42, .45, .58), muet);
-  float bat = perm * (.5 + .5*sin(T*2.1));
-  float R = taille * .27 * (1. + .07*flash + .06*bat + .035*parle*sin(T*13.)) * mix(1., .8, muet);
-  R = max(R, 1e-4);
-  float x = r / R, mu = sqrt(max(0., 1. - x*x));
-
-  // ---- surface : granulation (fbm déformé), bords assombris comme une sphère, cœur blanc
-  vec2 sp = (p / R) / (.5 + .5*mu);
-  vec2 sq = sp*1.15 + vec2(t*.05, t*.015);
-  float w0 = fbm3(sq*1.2 + t*.13);
-  float gran = fbm(sq*1.5 + w0*(1.1 + 1.1*energie) - t*.09);
-  float limb = .32 + .68*pow(mu, .5);
-  vec3 surf = mix(mix(cb, ca, .45), mix(ca, vec3(1.), .55), .35 + .65*smoothstep(.3, .75, gran)) * limb * (.8 + .55*energie);
-  surf += mix(ca, vec3(1.), .7) * pow(mu, 2.2) * (.75 + .35*energie);
-  float disque = smoothstep(R + 2.*px, R - 1.5*px, r);
-
-  // ---- couronne : filaments de longueurs inégales, plus longs quand elle s'ouvre ou parle (éruptions)
-  float e = max(r - R, 0.);
-  float lon = fbm(dir*2.1 + vec2(t*.05, -t*.04) + 5.);
-  float fil = fbm(dir*5.5 + vec2(e*2.2 - t*.22, e*1.3));
-  float erup = parle * pow(fbm3(dir*3.2 + vec2(T*1.1, -T*.7)), 3.) * (2.2 + 1.4*sin(T*11.));
-  float L = R * (.22 + 1.1*lon*lon*(.6 + energie) + .22*ouv + erup) * mix(1., .35, muet);
-  float couronne = exp(-e / max(L, 1e-4)) * (.55 + .45*fil) * (.34 + .26*energie + .2*ouv);
-  // ---- halo qui respire (très doux, jamais un bord)
-  float halo = (R*R) / (r*r + R*R*.9);
-  float bordCanvas = smoothstep(1., .55, r);
-
-  // ---- aigrettes : 4 fines (comme l'étoile nova du ciel), 4 plus courtes en diagonale ; écoute ouverte : elles tournent
-  float ra = ouv * T * .22;
-  vec2 qa = rot(ra) * p, qd = rot(.785398 - ra*1.7) * p;
-  float Lp = (.46 + .3*energie + .16*ouv + .22*parle*(.6 + .4*sin(T*9.)) + .12*bat) * (1. - .92*muet) * clamp(taille*1.6, 0., 1.4);
-  float wp = max(px*.85, .002);
-  float pics = pic(qa, Lp, wp) + pic(qa.yx, Lp, wp);
-  pics += (.22 + .45*ouv) * (pic(qd, Lp*.48, wp*.8) + pic(qd.yx, Lp*.48, wp*.8));
-
-  // ---- grains de poussière sur un disque incliné : devant, puis cachés derrière l'étoile
-  vec3 gcol = vec3(0.);
-  vec3 cg = mix(cb, vec3(1.), .55);
-  for (int i = 0; i < 12; i++) {
-    float fi = float(i), ha = h(vec2(fi, 3.7)), hb = h(vec2(fi, 9.1));
-    float a = t*(.22 + .3*ha)*(1. + 1.4*spir) + fi*2.39996;
-    float cyc = fract(T*(.08 + .1*hb) + ha);
-    float rad = R*(2.1 + 2.1*hb) * mix(1., 1. - .78*cyc, spir);
-    float fond = mix(1., smoothstep(0., .12, cyc)*smoothstep(1., .75, cyc), spir);
-    float sa = sin(a);
-    vec2 g = vec2(cos(a)*rad, sa*rad*.3);
-    g = vec2(g.x*.966 - g.y*.259, g.x*.259 + g.y*.966);   // disque penché de 15°
-    float derriere = step(0., sa);
-    float cache = mix(1., smoothstep(R*.85, R*1.25, length(g)), derriere);
-    float d = length(p - g), s = px*(.75 + .9*hb);
-    float pt = exp(-d*d/(s*s)) + .18*exp(-d/(s*3.5));
-    float prof = .45 + .55*(1. - derriere*.6) * (.7 + .3*sin(T*1.6 + fi*1.7));
-    gcol += cg * pt * prof * cache * fond;
-  }
-  gcol *= grains * (1. - muet) * (.8 + .5*energie);
-
-  // ---- composition, puis tonalité douce (jamais saturé) et un léger grain contre les bandes
-  vec3 c = surf * disque;
-  c += mix(ca, vec3(1.), .5) * exp(-pow(r/(R*1.55), 2.)) * (.45 + .25*energie);   // la lumière déborde du bord : pas de disque net
-  c += mix(cb, ca, .3) * couronne * (1. - disque) * 1.6;
-  c += mix(cb, ca, .45) * halo * (.16 + .2*energie + .25*flash + .18*bat + .1*ouv) * bordCanvas;
-  c += mix(ca, vec3(1.), .65) * pics * (1.3 + .7*energie + .3*flash) * bordCanvas;
-  c += gcol;
-  c *= mix(1., .55, muet);
-  c = mix(c, vec3(1.3, 1.25, 1.35) * (disque + halo*.6 + pics), blanc*.8);   // toute blanche à l'allumage / l'extinction
-  vec3 tm = 1. - exp(-c * 1.1);
-  float al = clamp(max(tm.r, max(tm.g, tm.b)), 0., 1.);
-  tm = clamp(tm + (h(gl_FragCoord.xy + fract(T*7.)*61.) - .5) / 255., 0., al);
-  // un petit voile d'espace derrière l'étoile (lisible même sur une page blanche), sans aucun bord
-  float va = .2 * exp(-r*r*9.) * bordCanvas * (1. - .3*muet);
-  tm += vec3(.012, .02, .06) * va * (1. - al);
-  al += va * (1. - al);
-  gl_FragColor = vec4(tm, al) * vis;
+  if (r > .985) { gl_FragColor = vec4(0.); return; }
+  vec2 dir = p / max(r, .0001);
+  float b1 = fb(dir*.16 + o1) - .5;
+  float b2 = texture2D(T, dir*.2 + o4).g - .5;
+  float rayon = taille * .62 * (1. + .34*(.45 + energie)*b1 + parle*(.075*b2 + .045*voix) + .035*flash);
+  float d = r - rayon;
+  float corps = smoothstep(.006, -.024, d);
+  float x = clamp(r / rayon, 0., 1.);
+  vec2 q = p*.55 + o2;
+  vec2 w = vec2(fb(q), fb(q + vec2(.43, .17))) - .5;
+  float pl = fb(p*.7 + w*(.55 + .5*energie) + o3);
+  float veine = texture2D(T, p*.8 + w*.7 + o2 + o3).g;
+  float fil = pow(max(0., 1. - abs(veine - .5)*2.6), 5.);
+  vec3 col = mix(c2, c1, smoothstep(.36, .64, pl));
+  col += mix(c1, vec3(1.), .6) * fil * (.28 + .2*energie);
+  float coeur = pow(1. - x, 1.7);
+  col += mix(c1, vec3(1., .95, .9), .55) * coeur * (.5 + .3*voix*parle);
+  col *= .8 + .32*smoothstep(.5, 1., x);
+  float bordI = exp(-abs(d)*40.) * (.5 + .45*energie) * (.85 + .3*voix*parle);
+  float flam = fb(dir*.3 + o1*2.);
+  float halo = exp(-max(d, 0.)*7.5) * (.2 + .32*energie + .12*voix*parle) * (.55 + .9*(flam - .5) + .45) * smoothstep(.97, .55, r) * (1. - .7*corps);
+  float onde = ondeA * exp(-abs(r - rayon*(1.06 + ondeQ*1.4))*60.) * (1. - ondeQ)*(1. - ondeQ) * smoothstep(.97, .6, r);
+  vec3 c = col*corps + mix(c1, vec3(1.), .45)*bordI + c1*halo + ondeC*onde*.55;
+  gl_FragColor = vec4(c, corps) * vis;
 }`;
+  // la texture de bruit (faite une fois) : canal R = grandes formes … A = petit grain ; chaque canal se répète sans couture
+  function texBruit() {
+    const S = 128, d = new Uint8Array(S * S * 4), per = [4, 8, 16, 32];
+    let s = 11; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    const lis = u => u * u * u * (u * (u * 6 - 15) + 10);
+    for (let c = 0; c < 4; c++) {
+      const P = per[c], g = new Float32Array(P * P); for (let i = 0; i < P * P; i++) g[i] = rnd();
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const fx = x / S * P, fy = y / S * P, ix = Math.floor(fx), iy = Math.floor(fy), ux = lis(fx - ix), uy = lis(fy - iy);
+        const x0 = ix % P, x1 = (ix + 1) % P, y0 = (iy % P) * P, y1 = ((iy + 1) % P) * P;
+        const a = g[y0 + x0] + (g[y0 + x1] - g[y0 + x0]) * ux, b = g[y1 + x0] + (g[y1 + x1] - g[y1 + x0]) * ux;
+        d[(y * S + x) * 4 + c] = Math.round((a + (b - a) * uy) * 255);
+      }
+    }
+    const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, S, S, 0, gl.RGBA, gl.UNSIGNED_BYTE, d);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    return t;
+  }
   // les particules : graine (u, v, w, z) + genre (0 = poussière, 1 = étincelle façon PC) ; tout est calculé ici
   const PART_VS = `
 attribute vec4 g; attribute float k;
@@ -846,8 +814,8 @@ void main(){
     pos = vec3(cos(ae)*re, sin(ae)*re*.82, sin(ae)*.5*re);
   }
   float prof = pos.z / max(length(pos), .001);                         // -1 derrière .. 1 devant
-  // derrière l'étoile : presque caché
-  float dedans = step(length(pos.xy), rayon*.45);   // 17/11 : le disque de l'étoile (plus petit que l'ancien plasma)
+  // derrière le plasma : presque caché
+  float dedans = step(length(pos.xy), rayon*.98);
   float cache = pos.z < 0. ? 1. - .9*dedans : 1. - (.5 + .3*pa)*dedans;           // derrière : presque caché ; devant : plus discret sur le plasma
   float sc = .55 + .45*sin(t*3.1 + g.x*61. + g.y*17.);                 // scintillement
   float front = .55 + .45*prof;
@@ -867,121 +835,109 @@ void main(){
   vec3 c = mix(vcol, vec3(1.), exp(-r2 * 14.) * .7);
   gl_FragColor = vec4(c * a, a * .6);
 }`;
-  let P = null, U = {}, buf = null, loc = 0, Q = null, bufP = null, locG = -1, locK = -1;
-  // 17/11 (« garde les jolies particules autour de l'étoile sur le tel ») : la poussière et les étincelles d'avant restent autour
+  function prog(vsrc, fsrc) {
+    const mk = (ty, src) => { const s = gl.createShader(ty); gl.shaderSource(s, src.replace(/\/\/[^\n]*/g, "")); gl.compileShader(s);   // sans les commentaires (accents refusés par certains pilotes)
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error((ty === gl.VERTEX_SHADER ? "VS " : "FS ") + gl.getShaderInfoLog(s) + " lost=" + gl.isContextLost()); return s; };
+    const p = gl.createProgram(); gl.attachShader(p, mk(gl.VERTEX_SHADER, vsrc)); gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fsrc));
+    gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) { const nom = gl.getActiveUniform(p, i).name; u[nom] = gl.getUniformLocation(p, nom); }
+    return { p, u };
+  }
+  // combien de particules : selon l'appareil (et bien moins si les animations sont réduites)
   const mem = navigator.deviceMemory || 4, coeurs = navigator.hardwareConcurrency || 4;
   let N = mem >= 6 && coeurs >= 8 ? 6000 : mem >= 4 && coeurs >= 6 ? 4200 : mem >= 3 ? 3000 : 1800;
   if (REDUIT) N = 1200;
-  const NE = 46;   // les étincelles
-  let actifs = N;
-  try {
-    // highp comme sur le PC ; un appareil qui ne l'a pas en fragment prend mediump (sinon le shader serait refusé)
-    let hp = true; try { const f = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT); hp = !!(f && f.precision > 0); } catch (e) {}
-    const src = hp ? FS : FS.replace("precision highp float;", "precision mediump float;");
-    const mk = (ty, s0) => { const s = gl.createShader(ty); gl.shaderSource(s, s0.replace(/\/\/[^\n]*/g, "")); gl.compileShader(s);   // sans les commentaires (accents refusés par certains pilotes)
-      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error((ty === gl.VERTEX_SHADER ? "VS " : "FS ") + gl.getShaderInfoLog(s) + " lost=" + gl.isContextLost()); return s; };
-    P = gl.createProgram(); gl.attachShader(P, mk(gl.VERTEX_SHADER, VS)); gl.attachShader(P, mk(gl.FRAGMENT_SHADER, src));
-    gl.bindAttribLocation(P, loc, "p"); gl.linkProgram(P);
-    if (!gl.getProgramParameter(P, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(P));
-    for (const n of ["t", "taille", "energie", "parle", "flash", "blanc", "vis", "c1", "c2", "m1", "m2"]) U[n] = gl.getUniformLocation(P, n);
-    buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  const NE = 46;   // les étincelles du PC
+  let P, Q, bufQ, bufP, texB, actifs = N;
+  function construire() {
+    P = prog(PLASMA_VS, PLASMA_FS); Q = prog(PART_VS, PART_FS);
+    texB = texBruit();
+    bufQ = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bufQ);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
-    try {   // les particules : si elles sont refusées, l'étoile reste seule
-      Q = gl.createProgram(); gl.attachShader(Q, mk(gl.VERTEX_SHADER, PART_VS)); gl.attachShader(Q, mk(gl.FRAGMENT_SHADER, PART_FS));
-      gl.linkProgram(Q); if (!gl.getProgramParameter(Q, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(Q));
-      const v = {}, nu = gl.getProgramParameter(Q, gl.ACTIVE_UNIFORMS);
-      for (let i = 0; i < nu; i++) { const nom = gl.getActiveUniform(Q, i).name; v[nom] = gl.getUniformLocation(Q, nom); }
-      Q.u = v; locG = gl.getAttribLocation(Q, "g"); locK = gl.getAttribLocation(Q, "k");
-      const tot = N + NE, d = new Float32Array(tot * 5);
-      let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-      // l'ordre des points de Fibonacci est mélangé : si l'appareil peine et qu'on en dessine moins, ils sont retirés partout
-      const ordre = new Uint32Array(N); for (let i = 0; i < N; i++) ordre[i] = i;
-      for (let i = N - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)), x = ordre[i]; ordre[i] = ordre[j]; ordre[j] = x; }
-      for (let i = 0; i < tot; i++) {
-        const e = i >= N, j = i * 5, f = e ? 0 : ordre[i];
-        d[j] = e ? rnd() : (f + .5) / N; d[j + 1] = e ? rnd() : (f * .618034) % 1;
-        d[j + 2] = rnd(); d[j + 3] = rnd(); d[j + 4] = e ? 1 : 0;
-      }
-      bufP = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bufP); gl.bufferData(gl.ARRAY_BUFFER, d, gl.STATIC_DRAW);
-    } catch (e) { console.warn("particules WebGL indisponibles :", e); Q = null; }
-  } catch (e) { console.warn("étoile WebGL indisponible :", e); return o; }
+    const tot = N + NE, d = new Float32Array(tot * 5);
+    let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    // 2026-11-14 : l'ordre des points de Fibonacci est mélangé : si l'appareil peine et qu'on en dessine moins,
+    // les points retirés sont pris partout (avant : tout le bas de la coque disparaissait d'un coup)
+    const ordre = new Uint32Array(N); for (let i = 0; i < N; i++) ordre[i] = i;
+    for (let i = N - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)), x = ordre[i]; ordre[i] = ordre[j]; ordre[j] = x; }
+    for (let i = 0; i < tot; i++) {
+      const e = i >= N, j = i * 5, f = e ? 0 : ordre[i];
+      d[j] = e ? rnd() : (f + .5) / N;                       // sphère de Fibonacci (répartition régulière)
+      d[j + 1] = e ? rnd() : (f * .618034) % 1;
+      d[j + 2] = rnd(); d[j + 3] = rnd(); d[j + 4] = e ? 1 : 0;
+    }
+    bufP = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bufP); gl.bufferData(gl.ARRAY_BUFFER, d, gl.STATIC_DRAW);
+  }
+  try { construire(); } catch (e) { console.warn("orbe WebGL indisponible :", e); return o; }
+  const locP = gl.getAttribLocation(P.p, "p"), locG = gl.getAttribLocation(Q.p, "g"), locK = gl.getAttribLocation(Q.p, "k");
   let perdu = false;
   cv.addEventListener("webglcontextlost", ev => { ev.preventDefault(); perdu = true; basculer2D(); });
   function basculer2D() { o.ok = false; cv.hidden = true; ov.hidden = false; try { tailleOrbe(); } catch (e) {} }
-  // finesse : 1 = pleine (densité d'écran plafonnée à 1.75) ; baisse par paliers si le téléphone peine, jamais sous .5
-  let fin = 1;
   o.tailler = () => {
-    const w = Math.min(1100, Math.round(cv.clientWidth * Math.min(1.75, window.devicePixelRatio || 1) * fin));
+    const w = Math.round(cv.clientWidth * Math.min(1.75, window.devicePixelRatio || 1));
     if (w && cv.width !== w) { cv.width = cv.height = w; gl.viewport(0, 0, w, w); }
   };
-  // les mêmes réglages lissés que le PC (orbe.html : k = 1 - .02^dt ; orbe-v2.js : k = 1 - .025^dt)
-  const cur = { c1: ET.demarrage.c1.slice(), c2: ET.demarrage.c2.slice(), taille: ET.demarrage.taille, energie: ET.demarrage.energie, vitesse: ET.demarrage.vitesse };
-  const S = { muet: 0, ouv: 0, ptt: 0, spir: 0, perm: 0 };
-  const mix1 = (a, c) => a * .7 + Math.min(1, c * .5 + .5) * .3;
-  let vt = 0, T = 0, parleFort = 0, mesureT = 0, mesureN = 0, lent = 0;
-  const mode = { ec: 0, pe: 0, pa: 0, nv: 0 };   // particules : écoute, réflexion, parole, envoi (0..1, lissés)
-  let tt = 0, te = 0, voixU = 0;
-  const ring = [1, 1, 1], AMBRE = [1, .62, .28], BL = [1, 1, 1];
-  o.dessiner = (now, dt) => {
+  // tout ce qui bouge est INTÉGRÉ image par image (jamais « temps × vitesse qui change ») : aucun saut quand l'état change
+  let tt = 0, te = 0, mesureT = 0, mesureN = 0, lent = 0, parleU = 0, voixU = 0;
+  const O = new Float32Array(8), ring = cur.c.slice(), AMBRE = [1, .62, .28], BLANC = [1, 1, 1];
+  const VO = [.035, .022, .05, -.034, -.03, .047];   // vitesses des décalages du bruit (contour, plasma)
+  o.dessiner = (now, dt, vac, souffle) => {
     if (perdu || !cv.width) return;
     const e = ET[orbeEtat] || ET.repos, k = 1 - Math.pow(.02, dt);
-    const c2v = micCoupe ? { taille: e.taille, energie: e.energie * .3, vitesse: e.vitesse * .3 } : e;   // micro coupé : endormie
-    for (const c of ["taille", "energie", "vitesse"]) cur[c] += (c2v[c] - cur[c]) * k;
-    for (const c of ["c1", "c2"]) for (let i = 0; i < 3; i++) cur[c][i] += (e[c][i] - cur[c][i]) * k;
-    // parole : la couronne bat (comme le PC) ; à l'écoute, quand il parle : demi-battement (parleCible du PC)
-    const pc = orbeEtat === "parle" ? .8 + .2 * Math.sin(now / 90) : (orbeEtat === "ecoute" && niveauMicro > .12 ? .5 : 0);
-    parleFort += (pc - parleFort) * (1 - Math.pow(.001, dt));
-    vt += dt * cur.vitesse; T += dt;
-    const souffle = orbeEtat === "repos" ? .03 * Math.sin(now / 900) : 0;   // respiration au repos
-    const ks = 1 - Math.pow(.025, dt), ec = orbeEtat === "ecoute";
-    const c = { muet: micCoupe ? 1 : 0, ouv: ec ? 1 : 0, ptt: ec && ptt ? 1 : 0,
-                spir: orbeEtat === "reflechit" || orbeEtat === "envoi" ? 1 : 0, perm: orbeEtat === "permission" ? 1 : 0 };
-    for (const cle in c) S[cle] += (c[cle] - S[cle]) * ks;
-    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    gl.useProgram(P);
-    gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-    gl.uniform1f(U.t, vt); gl.uniform1f(U.taille, cur.taille + souffle); gl.uniform1f(U.energie, cur.energie);
-    gl.uniform1f(U.parle, parleFort); gl.uniform1f(U.flash, flash); gl.uniform1f(U.blanc, 0); gl.uniform1f(U.vis, 1);
-    gl.uniform3fv(U.c1, cur.c1); gl.uniform3fv(U.c2, cur.c2);
-    gl.uniform4f(U.m1, S.muet, S.ouv, S.ptt, S.spir);
-    gl.uniform4f(U.m2, S.perm, 2 / Math.max(1, cv.width), 1, T);
+    for (const c of VC) for (let i = 0; i < 3; i++) cur[c][i] += (e[c][i] - cur[c][i]) * k;
+    for (const c of VN) cur[c] += (e[c] - cur[c]) * k;
+    const km = 1 - Math.pow(.06, dt);
+    mode.ec += ((orbeEtat === "ecoute" ? 1 : 0) - mode.ec) * km;
+    mode.pe += ((orbeEtat === "reflechit" ? 1 : 0) - mode.pe) * km;
+    mode.pa += ((orbeEtat === "parle" ? 1 : 0) - mode.pa) * km;
+    mode.nv += ((orbeEtat === "envoi" ? 1 : 0) - mode.nv) * (1 - Math.pow(.002, dt));
+    const vit = dt * cur.vi * (REDUIT ? .25 : 1);
+    tt += vit; te += vit * (1 + 1.2 * mode.pe);
+    for (let i = 0; i < 6; i++) { O[i] += vit * VO[i]; O[i] -= Math.floor(O[i]); }
+    O[6] += dt * (.05 + .16 * voixFort * mode.pa); O[7] += dt * (.035 + .11 * voixFort * mode.pa);   // la vibration du contour (parole)
+    O[6] -= Math.floor(O[6]); O[7] -= Math.floor(O[7]);
+    parleU += (mode.pa * (.6 + .4 * voixFort) - parleU) * (1 - Math.pow(.01, dt));
+    voixU += (voixFort * mode.pa - voixU) * (1 - Math.pow(.004, dt));
+    const rayon = (cur.ta + souffle) * ECH * .62;
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.enable(gl.BLEND);
+    // 1) le plasma
+    gl.useProgram(P.p); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texB);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufQ); gl.enableVertexAttribArray(locP); gl.vertexAttribPointer(locP, 2, gl.FLOAT, false, 0, 0);
+    const u = P.u;
+    gl.uniform1i(u.T, 0);
+    gl.uniform1f(u.taille, (cur.ta + souffle) * ECH); gl.uniform1f(u.energie, cur.en + .12 * voixU);
+    gl.uniform1f(u.parle, parleU); gl.uniform1f(u.voix, voixU); gl.uniform1f(u.flash, flash); gl.uniform1f(u.vis, vac);
+    gl.uniform2f(u.o1, O[0], O[1]); gl.uniform2f(u.o2, O[2], O[3]); gl.uniform2f(u.o3, O[4], O[5]); gl.uniform2f(u.o4, O[6], O[7]);
+    gl.uniform3fv(u.c1, cur.c1); gl.uniform3fv(u.c2, cur.c2);
+    for (let i = ondes.length - 1; i >= 0; i--) { if (now - ondes[i].t0 >= ondes[i].d) ondes.splice(i, 1); }
+    const od = ondes.length ? ondes[ondes.length - 1] : null, oq = od ? Math.min(1, (now - od.t0) / od.d) : 1;
+    gl.uniform1f(u.ondeQ, oq); gl.uniform1f(u.ondeA, od ? .9 : 0); gl.uniform3fv(u.ondeC, od ? od.c : BLANC);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    gl.disableVertexAttribArray(loc);
-    // les particules autour, en lumière additive, aux couleurs de l'étoile
-    if (Q) {
-      const km = 1 - Math.pow(.06, dt);
-      mode.ec += ((ec ? 1 : 0) - mode.ec) * km;
-      mode.pe += ((orbeEtat === "reflechit" ? 1 : 0) - mode.pe) * km;
-      mode.pa += ((orbeEtat === "parle" ? 1 : 0) - mode.pa) * km;
-      mode.nv += ((orbeEtat === "envoi" ? 1 : 0) - mode.nv) * (1 - Math.pow(.002, dt));
-      const vit = dt * cur.vitesse * (REDUIT ? .25 : 1);
-      tt += vit; te += vit * (1 + 1.2 * mode.pe);
-      voixU += (voixFort * mode.pa - voixU) * (1 - Math.pow(.004, dt));
-      const rc = ec && ptt ? AMBRE : BL;   // talkie : anneau ambre
-      for (let i = 0; i < 3; i++) ring[i] += (mix1(rc[i], cur.c1[i]) - ring[i]) * k;
-      gl.useProgram(Q); gl.blendFunc(gl.ONE, gl.ONE);
-      gl.bindBuffer(gl.ARRAY_BUFFER, bufP);
-      gl.enableVertexAttribArray(locG); gl.vertexAttribPointer(locG, 4, gl.FLOAT, false, 20, 0);
-      gl.enableVertexAttribArray(locK); gl.vertexAttribPointer(locK, 1, gl.FLOAT, false, 20, 16);
-      const v = Q.u;
-      gl.uniform1f(v.t, tt); gl.uniform1f(v.te, te); gl.uniform1f(v.rayon, (cur.taille + souffle) * .88 * .62);
-      gl.uniform1f(v.ec, mode.ec); gl.uniform1f(v.pe, mode.pe); gl.uniform1f(v.pa, mode.pa); gl.uniform1f(v.nv, mode.nv);
-      gl.uniform1f(v.voix, voixU); gl.uniform1f(v.micro, niveauMicro);
-      gl.uniform1f(v.dpr, cv.width / Math.max(1, cv.clientWidth)); gl.uniform1f(v.base, Math.max(.7, Math.min(1.25, cv.clientWidth / 520)));
-      gl.uniform1f(v.vis, (.75 + .5 * cur.energie) * (1 - .75 * S.muet)); gl.uniform1f(v.fuite, 1);   // micro coupé : presque éteintes, comme les grains
-      gl.uniform3fv(v.ca, cur.c2); gl.uniform3fv(v.cb, cur.c1); gl.uniform3fv(v.cc, ring);
-      gl.drawArrays(gl.POINTS, 0, actifs);
-      gl.drawArrays(gl.POINTS, N, NE);
-      gl.disableVertexAttribArray(locG); gl.disableVertexAttribArray(locK);
-    }
-    // le téléphone peine vraiment (plus de 30 ms par image pendant 2 × 2 s) : un peu moins de pixels, jamais sous la moitié
+    gl.disableVertexAttribArray(locP);
+    // 2) les particules, en lumière additive
+    gl.useProgram(Q.p); gl.blendFunc(gl.ONE, gl.ONE);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufP);
+    gl.enableVertexAttribArray(locG); gl.vertexAttribPointer(locG, 4, gl.FLOAT, false, 20, 0);
+    gl.enableVertexAttribArray(locK); gl.vertexAttribPointer(locK, 1, gl.FLOAT, false, 20, 16);
+    const v = Q.u;
+    gl.uniform1f(v.t, tt); gl.uniform1f(v.te, te); gl.uniform1f(v.rayon, rayon);
+    gl.uniform1f(v.ec, mode.ec); gl.uniform1f(v.pe, mode.pe); gl.uniform1f(v.pa, mode.pa); gl.uniform1f(v.nv, mode.nv);
+    gl.uniform1f(v.voix, voixU); gl.uniform1f(v.micro, niveauMicro);
+    gl.uniform1f(v.dpr, cv.width / Math.max(1, cv.clientWidth)); gl.uniform1f(v.base, Math.max(.7, Math.min(1.25, cv.clientWidth / 520)));
+    gl.uniform1f(v.vis, vac * (.75 + .5 * cur.en)); gl.uniform1f(v.fuite, 1);
+    const rc = orbeEtat === "ecoute" && ptt ? AMBRE : cur.c;   // talkie : anneau ambre, comme sur le PC (en fondu)
+    for (let i = 0; i < 3; i++) ring[i] += (rc[i] - ring[i]) * k;
+    gl.uniform3fv(v.ca, cur.a); gl.uniform3fv(v.cb, cur.b); gl.uniform3fv(v.cc, ring);
+    gl.drawArrays(gl.POINTS, 0, actifs);                          // la poussière (peut être réduite si l'appareil peine)
+    gl.drawArrays(gl.POINTS, N, NE);                              // les étincelles
+    gl.disableVertexAttribArray(locG); gl.disableVertexAttribArray(locK);
+    // l'appareil peine vraiment (plus de 30 ms par image pendant 2 × 2 s) : un peu moins de particules, jamais moins de 1200
     mesureT += dt; mesureN++;
     if (mesureT > 2) {
       const moy = mesureT / mesureN; mesureT = mesureN = 0;
-      if (moy > .03) { if (++lent >= 2) { lent = 0;   // d'abord moins de particules (jamais moins de 1200), puis moins de pixels
-        if (Q && actifs > Math.min(N, 1200)) actifs = Math.max(Math.min(N, 1200), Math.round(actifs * .82));
-        else if (fin > .5) { fin = Math.max(.5, fin * .82); o.tailler(); } } } else lent = 0;
+      if (moy > .03) { if (++lent >= 2) { actifs = Math.max(Math.min(N, 1200), Math.round(actifs * .82)); lent = 0; } } else lent = 0;
     }
   };
   o.ok = true; cv.hidden = false; ov.hidden = true;
@@ -1002,11 +958,11 @@ function dessinerOrbe(now, dt) {
   if (!orbeGl.ok && orbeEtat === "parle" && voixFort > .78 && now - dernierPic > 700) { dernierPic = now; ondes.push({ t0: now, d: 1400, c: s.acc.slice() }); }
   if (s.perm > .5 && now - dernierBalise > 1500) { dernierBalise = now; ondes.push({ t0: now, d: 1500, c: [1, .86, .5] }); }
   vt += dt * s.spd;
-  flash = Math.max(0, flash - dt * 2.5);   // comme le PC
+  flash = Math.max(0, flash - dt * 2.2);
   let vac = 1; if (s.flick > .05) vac = 1 - s.flick * .25 * (.5 + .5 * Math.sin(now / 53) * Math.sin(now / 197));
   souffleA += ((orbeEtat === "repos" ? 1 : .35) - souffleA) * (1 - Math.pow(.05, dt));   // la respiration ne s'arrête jamais d'un coup
   const souffle = .025 * souffleA * Math.sin(now / 1100);
-  if (orbeGl.ok) { orbeGl.dessiner(now, dt); return; }   // la version WebGL (l'étoile du PC à l'identique + les particules) ; sinon l'étoile 2D ci-dessous
+  if (orbeGl.ok) { orbeGl.dessiner(now, dt, vac, souffle); return; }   // la version WebGL (plasma du PC + particules) ; sinon l'étoile 2D ci-dessous
   const R = C * s.R * 1.18 * (1 + souffle + .05 * voixFort + .05 * flash);
   const x = oc; x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, W, W);
   const MAX = C * .97;   // rien ne touche le bord du canvas (sinon on voit son carré)
@@ -1113,9 +1069,6 @@ function image(now) {
   // seul le ciel, qui bouge lentement, passe à mi-cadence
   const dt = Math.min(.05, (now - avant) / 1000); avant = now;
   if ((++verifTaille & 31) === 0 && (largeurVue() !== CW || hauteurVue() !== CH || !ov.width)) tailler();   // taille manquée (ouverture, clavier, rotation)
-  // 17/11 (« la vidéo freeze quand j'appuie, quand j'écris ») : une page montrée ou le bureau du PC couvre tout l'écran ->
-  // on ne dessine plus l'orbe ni le ciel en dessous (invisibles) : le téléphone garde sa force pour la vidéo et la frappe
-  if (couvert()) { majBouton(); return; }
   const t0 = performance.now();
   cielDt += dt; impaire = !impaire;
   if (impaire) { dessinerCiel(now, cielDt); cielDt = 0; }   // le ciel bouge lentement : 30 i/s lui suffisent
@@ -1123,10 +1076,6 @@ function image(now) {
   majSousTitre(now);
   majBouton();
   mesure.n++; mesure.cout += performance.now() - t0;
-}
-function couvert() {
-  const m = document.getElementById("montre"), b = document.getElementById("bur");
-  return !!((m && m.classList.contains("vu") && m.classList.contains("on")) || (b && b.classList.contains("vu")));
 }
 function tailler() { tailleCiel(); tailleOrbe(); placerAgents(); }
 addEventListener("resize", () => { clearTimeout(tailler.t); tailler.t = setTimeout(tailler, 120); });
@@ -1443,7 +1392,6 @@ $("fil").addEventListener("click", ev => {   // toucher une réponse : la rééc
 
 const vusAgents = new Set(JSON.parse(lire("nova-agents-vus", "[]")));
 function agents(liste) {
-  liste = liste.filter(a => !(a.fini && vusAgents.has(a.id)));   // étoiles finies déjà rangées sur CE téléphone : plus affichées (sinon « N finis » reste bloqué à l'écran)
   const cle = JSON.stringify(liste.map(a => [a.id, a.fini, a.outils]));
   agentsListe = liste;
   if (cle === agents.cle) return; agents.cle = cle;
@@ -1458,28 +1406,19 @@ function agents(liste) {
   }
 }
 function placerAgents() {
-  const box = $("agents"); box.innerHTML = ""; const L = agentsListe, n = L.length;   // 2026-11-21 : AUCUN plafond sur le tel, on montre TOUTES les étoiles
+  const box = $("agents"); box.innerHTML = ""; const L = agentsListe.slice(-8), n = L.length;
   if (!n) return;
-  const W = box.clientWidth || innerWidth, pas = Math.min(40, (W - 40) / Math.max(1, n));
+  const W = box.clientWidth || innerWidth, pas = Math.min(40, (W - 60) / Math.max(1, n));
   L.forEach((a, i) => {
     const k = i - (n - 1) / 2, b = el("button", "ag" + (a.fini ? " fini" : "")); b.appendChild(el("i"));
-    b.style.left = (W / 2 + k * pas) + "px"; b.style.top = (Math.min(46, Math.abs(k) * Math.abs(k) * 2.2) + 4) + "px"; b.style.animationDelay = (i * 60) + "ms";   // arc borné pour rester joli avec beaucoup d'étoiles
+    b.style.left = (W / 2 + k * pas) + "px"; b.style.top = (Math.abs(k) * Math.abs(k) * 2.2 + 4) + "px"; b.style.animationDelay = (i * 60) + "ms";
     b.setAttribute("aria-label", a.texte);
     b.onclick = () => { vib(6); if (a.fini) ecouterAgent(a); else toast("✦ " + a.texte + (a.outils ? " · " + a.outils + " actions" : " · en cours")); };
     box.appendChild(b);
   });
   const fin = L.filter(a => a.fini).length, cours = n - fin;
   const t = el("div", "lbl", [cours ? cours + (cours > 1 ? " agents en cours" : " agent en cours") : "", fin ? fin + (fin > 1 ? " finis" : " fini") : ""].filter(Boolean).join(" · "));
-  t.id = "agentsTxt";
-  if (fin) {   // toucher « N finis » range les étoiles finies sur CE téléphone (local) : le compteur ne reste plus bloqué
-    t.style.cursor = "pointer"; t.title = "Toucher pour ranger les étoiles finies";
-    t.onclick = () => {
-      agentsListe.forEach(a => { if (a.fini) vusAgents.add(a.id); });
-      garder("nova-agents-vus", JSON.stringify([...vusAgents].slice(-40)));
-      agents.cle = null; vib(10); agents(agentsListe); toast("Étoiles finies rangées.");
-    };
-  }
-  box.appendChild(t);
+  t.id = "agentsTxt"; box.appendChild(t);
 }
 function ecouterAgent(a) {
   deverrouillerSon(); arreterEcoute(); fermerFeuilles(); vusAgents.add(a.id); garder("nova-agents-vus", JSON.stringify([...vusAgents].slice(-40)));
@@ -1909,7 +1848,6 @@ const Sortie = (() => {
               planifier(6000); return;
             }
             coupure = false;
-            if (r && r.occupe) { planifier(4000); return; }   // 2026-11-20 : whisper occupé par une autre dictée = attendre son tour, jamais un échec
             if (r && r.erreur && !r.texte) { bl.essais = (bl.essais || 0) + 1; if (bl.essais < 40) { planifier(5000); return; } }
             bl.texte = (r && r.texte) || ""; bl.blob = null; await sauver(it);
           }
@@ -2285,11 +2223,7 @@ function majUsage(u) {
     const actif = u.moteur === cle ? 1 : .7;
     return `<span style="opacity:${actif};white-space:nowrap">${nom} ${t}</span>`;
   };
-  // 2026-11-17 fable : sa jauge de la semaine à lui ; pas de chiffre du serveur = « inconnu » (jamais inventé)
-  const fable = !u.fable ? "" : u.fable.sem == null
-    ? `<span style="opacity:${u.moteur === "claude" ? 1 : .7};white-space:nowrap">Fable <i style="font-weight:500">inconnu</i></span>`
-    : `<span style="opacity:${u.moteur === "claude" ? 1 : .7};white-space:nowrap">Fable ${pc("sem", u.fable.sem)}</span>`;
-  el.innerHTML = [bloc("Claude", "claude", "sem", "5h"), fable, bloc("GPT", "chatgpt", "sem", "5h"), bloc("Gemini", "gemini", "", "jour")].filter(Boolean).join('<span style="opacity:.35"> &nbsp;|&nbsp; </span>');
+  el.innerHTML = [bloc("Claude", "claude", "sem", "5h"), bloc("GPT", "chatgpt", "sem", "5h"), bloc("Gemini", "gemini", "", "jour")].filter(Boolean).join('<span style="opacity:.35"> &nbsp;|&nbsp; </span>');
 }
 function ouvrirSaisie() { fermerFeuilles(); arreterEcoute(); if (dejaTape) { $("champ").value = dejaTape; dejaTape = ""; } $("saisie").classList.add("vu"); setTimeout(() => { $("champ").focus(); posBrouillon(); }, 60); posBrouillon(); vib(5); maj(); }
 function fermerSaisie() { $("saisie").classList.remove("vu"); $("champ").blur(); posBrouillon(); }
