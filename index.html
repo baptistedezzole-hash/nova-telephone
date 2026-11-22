@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="cede544ec1260c93">
+<meta name="nova-version" content="04824fce9a9e6ff8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -308,15 +308,30 @@ header .esp { flex: 1; }
 .ligne button.act { flex: none; height: 36px; padding: 0 14px; border-radius: 10px; font-size: 13px; color: #f6ecd3; border: 1px solid rgba(233, 214, 168, .25); background: rgba(233, 214, 168, .07); }
 .ligne button.act:disabled { opacity: .5; }
 .vide { padding: 12px 0; color: var(--txt3); font-size: 13.5px; }
-#fil { display: flex; flex-direction: column; gap: 14px; padding: 8px 0 12px; }
-.msg { font-size: 15px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
+/* 2026-11-21 le fil en vraies bulles (DA Braise & Cendre) : Nova à gauche (lueur or/braise douce), toi à droite (bleu),
+   coins arrondis, espacement aéré, arrivée douce. Médias (image/vidéo) et réécoute d'une bulle restent intacts. */
+#fil { display: flex; flex-direction: column; gap: 9px; padding: 10px 2px 14px; }
+.msg { position: relative; align-self: flex-start; max-width: 85%; padding: 9px 13px 10px; border-radius: 17px;
+  font-size: 15px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: anywhere;
+  border: 1px solid transparent; animation: msgEntre .42s var(--ressort) both; }
+@keyframes msgEntre { from { opacity: 0; transform: translateY(9px); } }
 .msg .qui { display: block; margin-bottom: 3px; }
-.msg.toi { color: rgba(169, 200, 255, .85); padding-left: 22%; text-align: right; }
-.msg.nova { color: var(--txt); padding-right: 6%; }
-.msg.nova .qui { color: rgba(233, 214, 168, .55); }
-.msg.info { text-align: center; font-size: 12.5px; color: var(--txt3); }
-.msg.ancien { opacity: .62; }
-.msg.joue { color: #fff; } .msg.joue .qui { color: var(--rose); }
+.msg.toi { align-self: flex-end; color: rgba(222, 234, 255, .95);
+  background: linear-gradient(180deg, rgba(169, 200, 255, .15), rgba(169, 200, 255, .07));
+  border-color: rgba(169, 200, 255, .24); border-bottom-right-radius: 6px; }
+.msg.toi .qui { color: rgba(169, 200, 255, .62); }
+.msg.nova { color: var(--txt); cursor: pointer;
+  background: linear-gradient(180deg, rgba(233, 214, 168, .085), rgba(233, 214, 168, .03));
+  border-color: rgba(233, 214, 168, .2); border-bottom-left-radius: 6px; }
+.msg.nova .qui { color: rgba(233, 214, 168, .62); }
+.msg.nova:active { border-color: rgba(233, 214, 168, .45); background: linear-gradient(180deg, rgba(233, 214, 168, .14), rgba(233, 214, 168, .06)); }
+.msg.toi + .msg.toi, .msg.nova + .msg.nova { margin-top: -3px; }
+.msg.info { align-self: center; max-width: 92%; padding: 4px 11px; border: 0; background: none;
+  text-align: center; font-size: 12.5px; color: var(--txt3); }
+.msg.ancien { opacity: .6; }
+.msg.joue { color: #fff; border-color: rgba(243, 166, 208, .5); box-shadow: 0 0 16px rgba(243, 166, 208, .14); }
+.msg.joue .qui { color: var(--rose); }
+.msg img, .msg video { max-width: min(66vw, 240px) !important; max-height: 210px; border-radius: 12px; }
 #reglagesF .corps label { display: flex; align-items: center; gap: 12px; min-height: 48px; font-size: 14.5px; }
 #reglagesF input[type=radio], #reglagesF input[type=checkbox] { width: 20px; height: 20px; accent-color: #d9c18c; flex: none; }
 #reglagesF p { color: var(--txt2); font-size: 13.5px; line-height: 1.5; }
@@ -426,11 +441,13 @@ html.saisieHaut #app { bottom: 0; padding-top: calc(var(--st) + 70px); }
 @keyframes hbEntre { from { opacity: 0; transform: translateY(8px); } }
 .hsep { align-self: center; margin: 12px 0 4px; }
 #histoVide { padding: 28px 8px; text-align: center; color: var(--txt3); font-size: 13.5px; line-height: 1.5; }
+/* 2026-11-21 « Nova réfléchit » : bulle côté Nova, braises qui pulsent (visible dès l'envoi, même hors ligne) */
 #histoTape { display: none; align-self: flex-start; gap: 5px; margin-top: 6px; padding: 13px 15px; border-radius: 17px; border-bottom-left-radius: 6px;
-  background: rgba(255, 255, 255, .04); border: 1px solid var(--bord); }
+  background: rgba(255, 170, 90, .08); border: 1px solid rgba(255, 170, 90, .3); animation: tapeLueur 1.8s ease-in-out infinite; }
 #histoTape.vu { display: inline-flex; }
-#histoTape i { width: 6px; height: 6px; border-radius: 50%; background: var(--ambre); animation: pt 1.2s ease-in-out infinite; }
+#histoTape i { width: 6px; height: 6px; border-radius: 50%; background: var(--ambre); box-shadow: 0 0 8px rgba(255, 170, 90, .8); animation: pt 1.2s ease-in-out infinite; }
 #histoTape i:nth-child(2) { animation-delay: .15s; } #histoTape i:nth-child(3) { animation-delay: .3s; }
+@keyframes tapeLueur { 0%, 100% { box-shadow: 0 0 0 rgba(255, 150, 80, 0); } 50% { box-shadow: 0 0 18px rgba(255, 150, 80, .22); } }
 #histoBas { position: absolute; z-index: 2; left: 50%; bottom: 14px; height: 44px; padding: 0 18px; border-radius: 22px; font-size: 13.5px; color: #f6ecd3;
   background: rgba(14, 18, 34, .96); border: 1px solid rgba(233, 214, 168, .38); box-shadow: 0 10px 30px rgba(0, 0, 0, .5);
   opacity: 0; pointer-events: none; transform: translate(-50%, 12px); transition: opacity .3s, transform .45s var(--ressort); white-space: nowrap; }
@@ -495,15 +512,15 @@ html.saisieHaut #app { bottom: 0; padding-top: calc(var(--st) + 70px); }
 <div id="voile"></div>
 <section class="feuille" id="convsF" aria-label="Conversations">
   <div class="tete"><div class="barre"></div>
-    <div class="onglets"><button data-o="ciel" class="choisi">Constellation</button><button data-o="fil">Le fil</button></div></div>
-  <div class="corps" id="vueCiel">
+    <div class="onglets"><button data-o="fil" class="choisi">Le fil</button><button data-o="ciel">Constellation</button></div></div>
+  <div class="corps" id="vueCiel" hidden>
     <div id="constel"><svg id="liens"></svg></div>
     <h3 class="lbl">Agents en fond</h3><div id="listeAgents"></div>
     <h3 class="lbl">Récentes sur le PC</h3>
     <div id="recListe"><div class="vide">…</div></div>
     <p class="vide">« Ouvrir » la lance en mode travail sur le PC ; elle apparaît alors dans la constellation, et tu lui parles d'ici.</p>
   </div>
-  <div class="corps" id="vueFil" hidden><div id="fil"></div></div>
+  <div class="corps" id="vueFil"><div id="fil"></div></div>
 </section>
 <section class="feuille" id="reglagesF" aria-label="Réglages">
   <div class="tete"><div class="barre"></div><div class="lbl" style="text-align:center">Réglages</div></div>
@@ -1500,7 +1517,7 @@ async function chargerRecentes() {
 }
 
 // ---------- les feuilles (glisser vers le haut / le bas) ----------
-let ongletF = "ciel";
+let ongletF = "fil";
 function ouvrirConvs(onglet) {
   fermerSaisie();
   ongletF = onglet || ongletF;
@@ -1516,7 +1533,7 @@ $("voile").onclick = fermerFeuilles;
 $("btnConvs").onclick = () => ouvrirConvs("ciel");
 $("marque").onclick = () => ouvrirConvs("fil");
 $("st").onclick = () => { if (ST.id) ouvrirConvs("fil"); };
-$("cible").onclick = ev => { if (ev.target.closest("b")) { vib(8); choisirConv("nova"); toast("Tu parles à Nova."); } else ouvrirConvs("ciel"); };
+$("cible").onclick = ev => { if (ev.target.closest("b")) { vib(8); choisirConv("nova"); toast("Tu parles à Nova."); } else ouvrirConvs("fil"); };
 document.querySelectorAll(".feuille").forEach(f => {   // tirer la feuille vers le bas pour la fermer
   let y0 = null, dy = 0;
   const tete = f.querySelector(".tete"), corps = f.querySelectorAll(".corps");
@@ -2225,7 +2242,7 @@ function majUsage(u) {
   };
   el.innerHTML = [bloc("Claude", "claude", "sem", "5h"), bloc("GPT", "chatgpt", "sem", "5h"), bloc("Gemini", "gemini", "", "jour")].filter(Boolean).join('<span style="opacity:.35"> &nbsp;|&nbsp; </span>');
 }
-function ouvrirSaisie() { fermerFeuilles(); arreterEcoute(); if (dejaTape) { $("champ").value = dejaTape; dejaTape = ""; } $("saisie").classList.add("vu"); setTimeout(() => { $("champ").focus(); posBrouillon(); }, 60); posBrouillon(); vib(5); maj(); }
+function ouvrirSaisie() { fermerFeuilles(); arreterEcoute(); if (window.NovaHisto && !NovaHisto.ouvert()) NovaHisto.basculer(true, true); if (dejaTape) { $("champ").value = dejaTape; dejaTape = ""; } $("saisie").classList.add("vu"); setTimeout(() => { $("champ").focus(); posBrouillon(); }, 60); posBrouillon(); vib(5); maj(); }
 function fermerSaisie() { $("saisie").classList.remove("vu"); $("champ").blur(); posBrouillon(); }
 $("btnEcrire").onclick = ouvrirSaisie;
 $("fermerSaisie").onclick = fermerSaisie;
@@ -2236,7 +2253,8 @@ $("dicterSaisie").addEventListener("click", () => {
   dejaTape = $("champ").value.trim(); $("champ").value = "";
   fermerSaisie(); vib(8); ecouter();
 });
-$("saisie").addEventListener("submit", ev => { ev.preventDefault(); deverrouillerSon(); arreterEcoute(); stopLecture(); envoyer($("champ").value); $("champ").value = ""; fermerSaisie(); });
+// 2026-11-21 conversation en continu : on envoie, le champ se vide et RESTE prêt (barre et clavier ne se ferment plus) ; la croix (#fermerSaisie) ferme.
+$("saisie").addEventListener("submit", ev => { ev.preventDefault(); deverrouillerSon(); arreterEcoute(); stopLecture(); const t = $("champ").value; if (!t.trim() && !brouillon.length) return; envoyer(t); $("champ").value = ""; $("champ").focus(); });
 // 2026-11-12 le clavier du téléphone : la zone d'écriture (et la dernière réponse) restent juste au-dessus.
 // L'appli installée est en plein écran (display fullscreen) : Chrome Android n'y redimensionne pas toujours la page,
 // donc on mesure le clavier nous-mêmes : VirtualKeyboard (Chrome/Android), visualViewport (iPhone, navigateur), sinon
@@ -2831,7 +2849,9 @@ window.NovaHisto = (() => {
     if (!pret) return;
     if (conv !== affichee) dessiner();
     const c = conv === "nova" ? null : convs.find(y => y.id === conv);
-    const tape = ouvert() && (c ? c.etat === "reflechit" : novaEtat === "reflechit");
+    // 2026-11-21 montre « Nova réfléchit » dès l'envoi (attente locale), pas seulement quand le PC le confirme : chat réactif, marche hors ligne
+    const attenteLocale = (local === "attente" || local === "envoi");
+    const tape = ouvert() && (c ? c.etat === "reflechit" : (novaEtat === "reflechit" || attenteLocale));
     const t = $("histoTape");
     if (tape !== t.classList.contains("vu")) { const etaitEnBas = enBas(); t.classList.toggle("vu", tape); if (tape && etaitEnBas) enDescendant(false); }
   }, 400);
