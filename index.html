@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="04824fce9a9e6ff8">
+<meta name="nova-version" content="aa858e8e873bc3ed">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -310,7 +310,7 @@ header .esp { flex: 1; }
 .vide { padding: 12px 0; color: var(--txt3); font-size: 13.5px; }
 /* 2026-11-21 le fil en vraies bulles (DA Braise & Cendre) : Nova à gauche (lueur or/braise douce), toi à droite (bleu),
    coins arrondis, espacement aéré, arrivée douce. Médias (image/vidéo) et réécoute d'une bulle restent intacts. */
-#fil { display: flex; flex-direction: column; gap: 9px; padding: 10px 2px 14px; }
+#fil { display: flex; flex-direction: column; gap: 9px; padding: 10px 2px 72px; }
 .msg { position: relative; align-self: flex-start; max-width: 85%; padding: 9px 13px 10px; border-radius: 17px;
   font-size: 15px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: anywhere;
   border: 1px solid transparent; animation: msgEntre .42s var(--ressort) both; }
@@ -1525,12 +1525,13 @@ function ouvrirConvs(onglet) {
   $("vueCiel").hidden = ongletF !== "ciel"; $("vueFil").hidden = ongletF !== "fil";
   $("convsF").classList.add("vu"); $("voile").classList.add("vu"); vib(5);
   requestAnimationFrame(() => { dessinerConvs(); if (ongletF === "fil") $("vueFil").scrollTop = $("vueFil").scrollHeight; });
-  if (ongletF === "ciel") chargerRecentes();
+  if (ongletF === "ciel") { chargerRecentes(); fermerSaisie(); }
+  else { $("saisie").classList.add("vu"); try { posBrouillon(); } catch (e) {} }   // 2026-11-22 : écrire directement DANS le fil (barre visible, clavier au toucher)
 }
-function fermerFeuilles() { document.querySelectorAll(".feuille").forEach(f => { f.classList.remove("vu"); f.style.transform = ""; }); $("voile").classList.remove("vu"); }
+function fermerFeuilles() { document.querySelectorAll(".feuille").forEach(f => { f.classList.remove("vu"); f.style.transform = ""; }); $("voile").classList.remove("vu"); fermerSaisie(); }
 document.querySelectorAll("#convsF .onglets button").forEach(b => b.onclick = () => ouvrirConvs(b.dataset.o));
 $("voile").onclick = fermerFeuilles;
-$("btnConvs").onclick = () => ouvrirConvs("ciel");
+$("btnConvs").onclick = () => ouvrirConvs("fil");
 $("marque").onclick = () => ouvrirConvs("fil");
 $("st").onclick = () => { if (ST.id) ouvrirConvs("fil"); };
 $("cible").onclick = ev => { if (ev.target.closest("b")) { vib(8); choisirConv("nova"); toast("Tu parles à Nova."); } else ouvrirConvs("fil"); };
