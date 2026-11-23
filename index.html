@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="17e2e5fc536d1c4a">
+<meta name="nova-version" content="40dd75516c9d8d62">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -1394,12 +1394,40 @@ function etatLocal(mid, etat) {   // 2026-11-23 fiable : état d'un message écr
   if (window.NovaHisto && NovaHisto.etat) NovaHisto.etat(mid, etat);
 }
 function enAttente(mid) { try { return !!mid && Sortie._mem.has(mid); } catch (x) { return false; } }   // pas encore pris par le PC
+// 2026-11-23 fil propre : la forme envoyée à Claude (« [Depuis le téléphone] … | images : C:\… ») ne s'affiche jamais : ni préfixe, ni chemin du PC.
+function nettoyerTel(t) {
+  const P = /^\s*\[Depuis le téléphone\]\s*/;
+  if (typeof t !== "string" || !P.test(t)) return { texte: t, brut: false };
+  const r = t.replace(P, "");
+  let m = r.match(/^(?:([\s\S]*?) \| )?images : ([A-Za-z]:\\[\s\S]*)$/);
+  if (m) { const n = m[2].split(" ; ").length; return { texte: (m[1] ? m[1] + " " : "") + "📷 " + n + " image" + (n > 1 ? "s" : ""), brut: true }; }
+  m = r.match(/^image : [A-Za-z]:\\[^|]*?(?: \| ([\s\S]*))?$/);
+  if (m) return { texte: m[1] ? "📷 " + m[1] : "📷 image envoyée", brut: true };
+  return { texte: r, brut: true };
+}
+const cleFil = t => String(t || "").toLowerCase().replace(/[*_`#]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim().slice(0, 120);
+// Le **gras** de Nova : uniquement des nœuds texte et <strong>, donc aucun HTML du message n'est jamais interprété.
+function poserTexte(n, t) {
+  const R = /\*\*(\S(?:[^\n]*?\S)?)\*\*/g; let i = 0, m;
+  while ((m = R.exec(t))) {
+    if (m.index > i) n.appendChild(document.createTextNode(t.slice(i, m.index)));
+    const f = document.createElement("strong"); f.textContent = m[1]; n.appendChild(f); i = m.index + m[0].length;
+  }
+  if (i < t.length) n.appendChild(document.createTextNode(t.slice(i)));
+}
 function afficher(e) {
+  if (typeof e.texte === "string") { const n = nettoyerTel(e.texte); if (n.brut) e = Object.assign({}, e, { texte: n.texte, brut: true }); }
   if (e.mid && e.qui === "toi" && !e.loc && enAttente(e.mid)) e = Object.assign({}, e, { loc: "attente" });   // revenu du PC mais pas encore pris par Nova : il reste en attente
   if (e.mid && e.qui === "toi" && !entrees.has(e.id) && entrees.has("loc-" + e.mid)) { entrees.set(e.id, entrees.get("loc-" + e.mid)); entrees.delete("loc-" + e.mid); }   // mon message, revenu du PC
   if (window.NovaHisto) NovaHisto.recevoir(e);   // 2026-11-12 historique défilable (mémorisé, sans doublon)
   let m = entrees.get(e.id);
   const fil = $("fil"), corps = $("vueFil");
+  if (m && m.dataset.vignette) return;   // la bulle avec la photo reste telle quelle
+  if (!m && e.qui === "toi") {   // même message revenu sous son autre forme : il prend la bulle déjà là (une seule fois par bulle)
+    const kf = cleFil(e.texte), ec = e.conv || "nova";
+    const j = [...fil.children].slice(-12).find(v => v.classList.contains("toi") && v.dataset.conv === ec && v.dataset.kf === kf && (e.brut ? !v.dataset.vuBrut : v.dataset.vignette === "1"));
+    if (j) { entrees.set(e.id, j); if (e.brut) j.dataset.vuBrut = "1"; else j.dataset.vignette = "2"; return; }
+  }
   if (!m) {
     m = document.createElement("div"); entrees.set(e.id, m);
     const bas = corps.scrollHeight - corps.scrollTop - corps.clientHeight < 80;
@@ -1412,7 +1440,8 @@ function afficher(e) {
   m.style.display = m.dataset.conv === conv ? "" : "none";
   m.innerHTML = "";
   if (e.qui !== "info") { const c = convs.find(x => x.id === m.dataset.conv); m.appendChild(el("span", "qui lbl", e.qui === "toi" ? "toi" : (m.dataset.conv === "nova" ? "Nova" : (c ? c.titre : "réponse")))); }
-  m.appendChild(document.createTextNode(e.texte));
+  if (e.qui === "nova") poserTexte(m, e.texte); else m.appendChild(document.createTextNode(e.texte));
+  m.dataset.kf = cleFil(e.texte); if (e.brut) m.dataset.vuBrut = "1";
   m.dataset.e = JSON.stringify({ texte: e.texte });
   while (fil.children.length > 120) { const x = fil.firstChild; entrees.forEach((v, k) => { if (v === x) entrees.delete(k); }); x.remove(); }
 }
@@ -2163,6 +2192,7 @@ async function ajouterBrouillon(fichiers) {
 }
 function vignettesFil(blobs, texte) {
   const m = document.createElement("div"); m.className = "msg toi"; m.dataset.conv = conv;
+  const nb = blobs.length; m.dataset.vignette = "1"; m.dataset.kf = cleFil((texte ? texte + " " : "") + "📷 " + nb + " image" + (nb > 1 ? "s" : ""));
   for (const b of blobs) { const im = document.createElement("img"); im.src = URL.createObjectURL(b.blob); im.style.cssText = "display:inline-block;max-width:46%;max-height:140px;border-radius:12px;margin:0 4px 4px 0"; m.appendChild(im); }
   if (texte) { m.appendChild(document.createElement("br")); m.appendChild(document.createTextNode(texte)); }
   $("fil").appendChild(m); requestAnimationFrame(() => { const c = $("vueFil"); c.scrollTop = c.scrollHeight; });
@@ -2773,11 +2803,37 @@ window.NovaHisto = (() => {
         q.onsuccess = () => {
           const c = q.result; if (!c) return ok();
           if (Array.isArray(c.value)) listes.set(String(c.key), c.value.filter(x => x && typeof x.id === "string" && typeof x.texte === "string" && /^(toi|nova)$/.test(x.qui)));
+          if (Array.isArray(c.value) && reparer(listes.get(String(c.key)))) sales.add(String(c.key));
           c.continue();
         };
         q.onerror = () => ok(); tx.onabort = () => ok();
       } catch (x) { ok(); }
     });
+  }
+  // 2026-11-23 fil propre : remet d'aplomb ce qui est déjà gardé (formes brutes, même message en double, vieux message retombé en bas)
+  function reparer(L) {
+    let change = false;
+    for (const x of L) {
+      const n = nettoyerTel(x.texte);
+      if (n.brut) { x.texte = n.texte; x.k = cle(x.qui, x.texte); x.b = 1; change = true; }
+      else if (x.t && !x.b) x.c = 1;
+    }
+    for (let i = 0; i < L.length; i++) {
+      const r = L[i]; if (!r.b || r.c || r.qui !== "toi") continue;
+      let j = -1, mieux = Infinity;
+      L.forEach((y, n) => { if (n !== i && y.c && !y.b && y.k === r.k && (!y.t || !r.t || Math.abs(y.t - r.t) < 180) && Math.abs(n - i) < mieux) { j = n; mieux = Math.abs(n - i); } });
+      if (j < 0) continue;
+      const a = L[Math.min(i, j)], z = L[Math.max(i, j)];
+      a.t = a.t && z.t ? Math.min(a.t, z.t) : (a.t || z.t); a.b = a.c = 1; a.al = [...(a.al || []), z.id, ...(z.al || [])];
+      L.splice(Math.max(i, j), 1); change = true; i = -1;
+    }
+    let maxT = 0;
+    for (let i = 0; i < L.length; i++) {
+      const x = L[i];
+      if (x.t && maxT - x.t > 300) { const o = L.findIndex(y => y.t > x.t); if (o >= 0 && o < i) { L.splice(i, 1); L.splice(o, 0, x); change = true; } }
+      else if (x.t > maxT) maxT = x.t;
+    }
+    return change;
   }
   function sauver(c) { sales.add(c); clearTimeout(minuterie); minuterie = setTimeout(ecrire, 700); }
   function ecrire() {
@@ -2785,7 +2841,7 @@ window.NovaHisto = (() => {
     if (!db || !sales.size) return;
     try {
       const st = db.transaction("convs", "readwrite").objectStore("convs");
-      for (const c of sales) st.put((listes.get(c) || []).filter(x => !x.tmp).slice(-MAX).map(({ id, qui, texte, t, k }) => ({ id, qui, texte, t, k })), c);
+      for (const c of sales) st.put((listes.get(c) || []).filter(x => !x.tmp).slice(-MAX).map(({ id, qui, texte, t, k, b, c: cl, al }) => ({ id, qui, texte, t, k, b, c: cl, al })), c);
       sales.clear();
     } catch (x) {}
   }
@@ -2804,7 +2860,8 @@ window.NovaHisto = (() => {
     return el("div", "hsep lbl", heure(x.t));
   }
   function bulle(x, neuf) {
-    const b = el("div", "hb " + x.qui + (neuf ? " neuf" : "") + (x.loc ? " loc-" + x.loc : "")); b.dataset.id = x.id; b.textContent = x.texte;
+    const b = el("div", "hb " + x.qui + (neuf ? " neuf" : "") + (x.loc ? " loc-" + x.loc : "")); b.dataset.id = x.id;
+    if (x.qui === "nova") poserTexte(b, x.texte); else b.textContent = x.texte;
     noeuds.set(x.id, b); return b;
   }
   function titre() {
@@ -2844,16 +2901,18 @@ window.NovaHisto = (() => {
       const p = L.find(y => y.id === "loc-" + e.mid);
       if (p) { const b = noeuds.get(p.id); if (b) { noeuds.delete(p.id); noeuds.set(id, b); b.dataset.id = id; b.classList.remove("loc-attente", "loc-envoye"); if (e.loc) b.classList.add("loc-" + e.loc); } p.id = id; p.mid = e.mid; if (e.loc) p.loc = e.loc; else delete p.loc; sauver(c); }
     }
-    const i = L.findIndex(x => x.id === id);
+    const i = L.findIndex(x => x.id === id || (x.al && x.al.includes(id)));
     if (i >= 0) {   // déjà là : il s'allonge (réponse qui s'écrit) ou rien
       if (e.ancien) curseur.set(c, Math.max(d, i));
-      const x = L[i]; if (x.texte === texte) return;
+      const x = L[i]; if (x.texte === texte || x.id !== id) return;
       const etaitEnBas = enBas(); x.texte = texte; x.k = k; if (!x.tmp) sauver(c);
-      if (ici) { const b = noeuds.get(id); if (b) b.textContent = texte; if (i === L.length - 1) apres(etaitEnBas, x); }
+      if (ici) { const b = noeuds.get(id); if (b) { b.textContent = ""; if (x.qui === "nova") poserTexte(b, texte); else b.textContent = texte; } if (i === L.length - 1) apres(etaitEnBas, x); }
       return;
     }
     const x = { id, qui: e.qui, texte, t: e.ancien ? 0 : (+e.t || Math.round(Date.now() / 1000)), k };
     if (e.loc) x.loc = e.loc;
+    if (e.mid) x.mid = e.mid;
+    if (e.brut) x.b = 1; else if (!e.ancien) x.c = 1;
     if (e.qui === "info") x.tmp = true;   // les petites infos (« message non livré ») ne sont pas gardées
     let ou = L.length;
     if (e.ancien && !x.tmp) {   // l'historique relu par le PC : déjà gardé (même texte) ? sinon à sa place dans l'ordre
@@ -2863,8 +2922,17 @@ window.NovaHisto = (() => {
       if (j >= 0) { curseur.set(c, Math.max(d, j)); return; }
       x.ancien = true; ou = d + 1; curseur.set(c, ou);
     } else if (!x.tmp) {   // en direct : le même message que le précédent, revenu avec un autre id ? (rare)
+      if (x.qui === "toi") {   // sa forme propre et sa forme brute = UN message ; deux envois voulus (même forme) restent deux bulles
+        const y = L.find(y => y.qui === "toi" && y.k === k && (x.b ? !y.b : !y.c) && (!y.t || Math.abs(y.t - x.t) < 180));
+        if (y) { if (!y.t) y.t = x.t; if (x.b) y.b = 1; else y.c = 1; (y.al = y.al || []).push(id); sauver(c); return; }
+      }
+      const der = L[L.length - 1];
+      if (der && der.t && x.t < der.t - 300 && !e.mid && !String(der.id).startsWith("loc-")) {   // vieux message rejoué : à sa place, pas en bas
+        const o = L.findIndex(y => y.t > x.t);
+        if (o >= 0) { ou = o; if (o <= d) curseur.set(c, d + 1); }
+      }
       const p = L[L.length - 1];
-      if (p && p.k === k && p.qui === x.qui && Math.abs((p.t || 0) - x.t) < 30) { const b = noeuds.get(p.id); if (b) { noeuds.delete(p.id); noeuds.set(id, b); b.dataset.id = id; } p.id = id; sauver(c); return; }
+      if (p && p.k === k && p.qui === x.qui && Math.abs((p.t || 0) - x.t) < 30 && !e.mid && !p.mid && !id.startsWith("loc-") && !p.id.startsWith("loc-")) { const b = noeuds.get(p.id); if (b) { noeuds.delete(p.id); noeuds.set(id, b); b.dataset.id = id; } p.id = id; sauver(c); return; }
     }
     L.splice(ou, 0, x);
     if (L.length > MAX) { const trop = L.splice(0, L.length - MAX); if (ici) trop.forEach(enlever); curseur.set(c, Math.max(-1, (curseur.get(c) ?? -1) - trop.length)); ou -= trop.length; }
