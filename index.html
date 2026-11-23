@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="aa858e8e873bc3ed">
+<meta name="nova-version" content="0358a929802a54c2">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -438,6 +438,10 @@ html.saisieHaut #app { bottom: 0; padding-top: calc(var(--st) + 70px); }
 .hb.info { align-self: center; max-width: 92%; padding: 4px 10px; font-size: 12.5px; color: var(--txt3); text-align: center; }
 .hb.joue { border-color: rgba(243, 166, 208, .55); color: #fff; }
 .hb.neuf { animation: hbEntre .45s var(--ressort); }
+/* 2026-11-23 fiable : état discret d'un message écrit ici */
+.hb.loc-attente, .msg.loc-attente { opacity: .62; }
+.hb.loc-attente::after, .msg.loc-attente::after { content: " ⏳"; font-size: 11px; }
+.hb.loc-envoye::after, .msg.loc-envoye::after { content: " ✓"; font-size: 11px; opacity: .6; }
 @keyframes hbEntre { from { opacity: 0; transform: translateY(8px); } }
 .hsep { align-self: center; margin: 12px 0 4px; }
 #histoVide { padding: 28px 8px; text-align: center; color: var(--txt3); font-size: 13.5px; line-height: 1.5; }
@@ -570,6 +574,7 @@ async function api(chemin, corps, opts = {}) {
   const sup = opts.entetes || {}; opts = Object.assign({}, opts); delete opts.entetes;
   const delai = opts.delai; delete opts.delai;   // 2026-11-07 boucle : un envoi qui reste suspendu sur une 4G qui flanche bloquait toute la file
   const ctl = delai && window.AbortController ? new AbortController() : null, tmo = ctl ? setTimeout(() => ctl.abort(), delai) : 0;
+  const surCtl = opts.surCtl; delete opts.surCtl; if (surCtl) surCtl(ctl);   // 2026-11-23 fiable : l'attente de l'état peut être relancée
   let r;
   try { r = await fetch(chemin, Object.assign({
     method: corps === undefined ? "GET" : "POST", cache: "no-store", credentials: "same-origin", signal: ctl ? ctl.signal : undefined,
@@ -1382,7 +1387,16 @@ function animerCarte(d) {
 // =====================================================================================================
 // LE FIL (historique), LES AGENTS, LA CONSTELLATION DES CONVERSATIONS
 // =====================================================================================================
+function etatLocal(mid, etat) {   // 2026-11-23 fiable : état d'un message écrit ici (attente -> envoyé ; effacé quand le PC le renvoie)
+  let m = entrees.get("loc-" + mid);
+  if (!m) { entrees.forEach(v => { if (v.dataset.mid === mid) m = v; }); if (m && etat === "envoye") etat = ""; }   // déjà revenu du PC : bulle normale
+  if (m) { m.classList.remove("loc-attente", "loc-envoye"); if (etat) m.classList.add("loc-" + etat); }
+  if (window.NovaHisto && NovaHisto.etat) NovaHisto.etat(mid, etat);
+}
+function enAttente(mid) { try { return !!mid && Sortie._mem.has(mid); } catch (x) { return false; } }   // pas encore pris par le PC
 function afficher(e) {
+  if (e.mid && e.qui === "toi" && !e.loc && enAttente(e.mid)) e = Object.assign({}, e, { loc: "attente" });   // revenu du PC mais pas encore pris par Nova : il reste en attente
+  if (e.mid && e.qui === "toi" && !entrees.has(e.id) && entrees.has("loc-" + e.mid)) { entrees.set(e.id, entrees.get("loc-" + e.mid)); entrees.delete("loc-" + e.mid); }   // mon message, revenu du PC
   if (window.NovaHisto) NovaHisto.recevoir(e);   // 2026-11-12 historique défilable (mémorisé, sans doublon)
   let m = entrees.get(e.id);
   const fil = $("fil"), corps = $("vueFil");
@@ -1392,7 +1406,8 @@ function afficher(e) {
     fil.appendChild(m);
     if (bas || !e.ancien) requestAnimationFrame(() => { corps.scrollTop = corps.scrollHeight; });
   }
-  m.className = "msg " + e.qui + (e.ancien ? " ancien" : "");
+  m.className = "msg " + e.qui + (e.ancien ? " ancien" : "") + (e.loc ? " loc-" + e.loc : "");
+  if (e.mid) m.dataset.mid = e.mid; else if (String(e.id).startsWith("loc-")) m.dataset.mid = String(e.id).slice(4);
   m.dataset.conv = e.conv || "nova";
   m.style.display = m.dataset.conv === conv ? "" : "none";
   m.innerHTML = "";
@@ -1558,11 +1573,18 @@ document.querySelectorAll(".feuille").forEach(f => {   // tirer la feuille vers 
 // =====================================================================================================
 // RECEVOIR (le téléphone demande l'état en continu : c'est aussi son « je suis là »)
 // =====================================================================================================
+// 2026-11-23 fiable : l'attente de l'état n'avait AUCUN délai ; après une veille ou un changement de réseau (Wi-Fi <-> 4G) elle
+// restait suspendue : plus rien ne revenait jusqu'au rechargement de la page. Elle est bornée et relancée au retour.
+let pollCtl = null, reveilPoll = false;
+function reveillerPoll() { if (pollCtl) { reveilPoll = true; try { pollCtl.abort(); } catch (x) {} } }
+addEventListener("online", reveillerPoll);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reveillerPoll(); });
 async function boucle() {
   let attente = 0;
   for (;;) {
     try {
-      const d = await api(`/api/etat?apres=${seq}&attente=${attente}`);
+      const d = await api(`/api/etat?apres=${seq}&attente=${attente}`, undefined, { delai: attente ? 35000 : 12000, surCtl: c => { pollCtl = c; } });
+      reveilPoll = false;
       if (!connecte && !avisMicro) avis("");   // garder l explication du micro (2026-11-12)
       const premier = !connecte; connecte = dejaConnecte = true; attente = 20; seq = d.seq; whisperPC = d.whisper;
       if (novaEtat !== "permission" && d.etat === "permission") { vib([20, 80, 20]); }
@@ -1591,6 +1613,7 @@ async function boucle() {
       maj();
       suite();
     } catch (ex) {
+      if (ex && ex.name === "AbortError" && (reveilPoll || attente)) { reveilPoll = false; attente = 0; continue; }   // réveil ou attente suspendue : on redemande tout de suite
       connecte = false; maj(); attente = 0;
       if (ex.jeton) { avis("Ce téléphone n'a pas le bon code. Sur le PC, dis à Nova « montre-moi le QR code » et scanne-le."); return; }
       await new Promise(r => setTimeout(r, 2500));
@@ -1922,13 +1945,16 @@ const Sortie = (() => {
         }
         coupure = false;
         if (it.annule) continue;
-        if (r && r.ok) { await retirer(it); continue; }   // accusé de réception du serveur : la copie locale peut partir
+        if (r && r.ok) { await retirer(it); etatLocal(it.mid, "envoye"); continue; }   // accusé de réception du serveur : la copie locale peut partir
         // le PC a répondu mais n'a pas pu le livrer (Nova pas prête…) : on garde et on réessaie
         it.essais = (it.essais || 0) + 1;
-        if (it.essais >= 20) { await retirer(it); afficher({ id: "err" + Date.now(), qui: "info", conv: it.conv, texte: (r && r.erreur) || "Message non livré." }); continue; }
+        // 2026-11-23 fiable : un message écrit n'est plus jamais jeté au bout de 20 essais (1 min 40) : il reste gardé, les essais s'espacent.
+        // Seule une conversation qui n'existe plus est abandonnée (elle ne passera jamais).
+        if (it.essais >= 3 && /inconnue/i.test((r && r.erreur) || "")) { await retirer(it); etatLocal(it.mid, ""); afficher({ id: "err" + Date.now(), qui: "info", conv: it.conv, texte: r.erreur }); continue; }
+        if (it.essais === 4) toast("Le PC n'a pas encore pris ton message. Je le garde et je réessaie.", 5000);
         await sauver(it);
         if (local === "attente") { local = ""; reecouter = false; maj(); }
-        planifier(5000); return;
+        planifier(Math.min(60000, 5000 * Math.max(1, it.essais - 3))); return;
       }
     } finally { occupe = false; rendre(); }
   }
@@ -2166,7 +2192,9 @@ async function envoyer(texte) {
   local = "attente"; envoyeA = Date.now(); toi(texte); maj(); vib(6);
   usages++; garder("nova-usages", String(usages));
   if (sessionSeq === Infinity) sessionSeq = seq;   // un message envoyé d'ici : la réponse sera lue ici aussi
-  await Sortie.ajouter({ kind: "texte", texte, conv });   // gardé d'abord, envoyé ensuite (dans l'ordre, sans doublon)
+  const it = await Sortie.ajouter({ kind: "texte", texte, conv });   // gardé d'abord, envoyé ensuite (dans l'ordre, sans doublon)
+  // 2026-11-23 fiable : le message s'écrit TOUT DE SUITE dans le fil (avant, rien tant que le PC ne l'avait pas renvoyé)
+  try { afficher({ id: "loc-" + it.mid, qui: "toi", conv: it.conv, texte, t: Math.round(Date.now() / 1000), loc: "attente" }); } catch (x) {}
   Sortie.vider();
 }
 addEventListener("load", () => setTimeout(() => Sortie.restaurer(), 1200));
@@ -2765,7 +2793,7 @@ window.NovaHisto = (() => {
     return el("div", "hsep lbl", heure(x.t));
   }
   function bulle(x, neuf) {
-    const b = el("div", "hb " + x.qui + (neuf ? " neuf" : "")); b.dataset.id = x.id; b.textContent = x.texte;
+    const b = el("div", "hb " + x.qui + (neuf ? " neuf" : "") + (x.loc ? " loc-" + x.loc : "")); b.dataset.id = x.id; b.textContent = x.texte;
     noeuds.set(x.id, b); return b;
   }
   function titre() {
@@ -2801,6 +2829,10 @@ window.NovaHisto = (() => {
     const c = String(e.conv || "nova"), id = String(e.id), texte = e.texte.slice(0, MAXT), k = cle(e.qui, texte);
     if (!listes.has(c)) listes.set(c, []);
     const L = listes.get(c), d = curseur.has(c) ? curseur.get(c) : -1, ici = c === affichee;
+    if (e.mid && e.qui === "toi" && !L.some(y => y.id === id)) {   // 2026-11-23 fiable : mon message revenu du PC = la bulle déjà affichée
+      const p = L.find(y => y.id === "loc-" + e.mid);
+      if (p) { const b = noeuds.get(p.id); if (b) { noeuds.delete(p.id); noeuds.set(id, b); b.dataset.id = id; b.classList.remove("loc-attente", "loc-envoye"); if (e.loc) b.classList.add("loc-" + e.loc); } p.id = id; p.mid = e.mid; if (e.loc) p.loc = e.loc; else delete p.loc; sauver(c); }
+    }
     const i = L.findIndex(x => x.id === id);
     if (i >= 0) {   // déjà là : il s'allonge (réponse qui s'écrit) ou rien
       if (e.ancien) curseur.set(c, Math.max(d, i));
@@ -2810,6 +2842,7 @@ window.NovaHisto = (() => {
       return;
     }
     const x = { id, qui: e.qui, texte, t: e.ancien ? 0 : (+e.t || Math.round(Date.now() / 1000)), k };
+    if (e.loc) x.loc = e.loc;
     if (e.qui === "info") x.tmp = true;   // les petites infos (« message non livré ») ne sont pas gardées
     let ou = L.length;
     if (e.ancien && !x.tmp) {   // l'historique relu par le PC : déjà gardé (même texte) ? sinon à sa place dans l'ordre
@@ -2863,7 +2896,13 @@ window.NovaHisto = (() => {
     attente.splice(0).forEach(recevoir);
     if (ouvert()) basculer(true, true);
   });
-  return { recevoir, basculer, ouvert, _listes: listes, _ecrire: ecrire };
+  function etat(mid, e) {
+    for (const L of listes.values()) { const x = L.find(y => y.id === "loc-" + mid || y.mid === mid); if (!x) continue;
+      if (e === "envoye" && x.id !== "loc-" + mid) e = "";   // déjà revenu du PC : bulle normale
+      if (e) x.loc = e; else delete x.loc;
+      const b = noeuds.get(x.id); if (b) { b.classList.remove("loc-attente", "loc-envoye"); if (e) b.classList.add("loc-" + e); } }
+  }
+  return { recevoir, basculer, ouvert, etat, _listes: listes, _ecrire: ecrire };
 })();
 
 tailler(); maj(); requestAnimationFrame(image); boucle();
