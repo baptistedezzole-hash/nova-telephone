@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="40dd75516c9d8d62">
+<meta name="nova-version" content="782f5723f12b8564">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -121,6 +121,16 @@ header .esp { flex: 1; }
   transition: opacity .3s ease, visibility 0s; animation: annuleFait .9s var(--ressort); }
 #btnAnnuler.fait b { background: linear-gradient(180deg, #d6f3e1, #a8e6c0); box-shadow: 0 0 14px rgba(168, 230, 192, .55); }
 @keyframes annuleFait { 0% { transform: translate(-50%, 0) scale(.9); } 45% { transform: translate(-50%, 0) scale(1.06); } 100% { transform: translate(-50%, 0) scale(1); } }
+/* 2026-11-23 : fil ouvert, Annuler vit DANS la barre d'écriture (rond, comme ses voisins) et ne recouvre plus jamais un message.
+   Pour garder le champ large : champ vide = il prend la place d'Envoyer ; texte tapé = il prend celle du micro. */
+#saisie #btnAnnuler { position: static; display: none; flex: none; width: 46px; height: 46px; min-width: 0; padding: 0; gap: 0; place-items: center; transform: none; animation: none;
+  box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; transition: border-color .3s, color .3s; }
+#saisie #btnAnnuler.vu, #saisie #btnAnnuler.fait { display: grid; }
+#saisie #btnAnnuler:active { transform: scale(.94); }
+#saisie #btnAnnuler span { display: none; }
+#saisie.avecAnnuler #champ:placeholder-shown ~ #envoyer { display: none; }
+#brouillon.vu + #saisie.avecAnnuler #champ:placeholder-shown ~ #envoyer { display: grid; }
+#saisie.avecAnnuler #champ:not(:placeholder-shown) ~ #dicterSaisie { display: none; }
 #agents { position: absolute; left: 0; right: 0; top: 2px; height: 56px; pointer-events: none; }
 .ag { position: absolute; width: 34px; height: 34px; margin-left: -17px; pointer-events: auto; display: grid; place-items: center;
   animation: entre .6s var(--ressort) backwards; }
@@ -480,7 +490,7 @@ html.saisieHaut #app { bottom: 0; padding-top: calc(var(--st) + 70px); }
     <div id="orbe"><canvas id="orbeGl" hidden></canvas><canvas id="orbeCv"></canvas></div>
     <div id="etat" class="lbl"></div>
     <div id="chipMic" role="status" aria-live="polite"><i></i><span></span></div>
-    <button id="btnAnnuler" aria-label="Annuler le message"><b><svg class="ic" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></b><span>Annuler</span></button>
+    <button type="button" id="btnAnnuler" aria-label="Annuler le message"><b><svg class="ic" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></b><span>Annuler</span></button>
   </div>
   <div id="texte">
     <div id="cartes"></div>
@@ -1683,8 +1693,8 @@ function indicSon() {
   el.style.display = (sonBloque || n) ? "block" : "none";
   el.textContent = "🔈 Toucher pour entendre" + (n ? " (" + n + " réponse" + (n > 1 ? "s" : "") + ")" : "");
 }
-function attendreToucher() { return new Promise(ok => { sonBloque = true; attenteToucherRes = ok; indicSon(); }); }
-function liberer() { sonBloque = false; const r = attenteToucherRes; attenteToucherRes = null; indicSon(); if (r) r(); }
+function attendreToucher() { return new Promise(ok => { sonBloque = true; attenteToucherRes = ok; indicSon(); majAnnuler(); }); }
+function liberer() { sonBloque = false; const r = attenteToucherRes; attenteToucherRes = null; indicSon(); majAnnuler(); if (r) r(); }
 document.addEventListener("pointerdown", () => { if (attenteToucherRes) liberer(); }, true);   // n'importe quel toucher débloque (le play() repart dans le même geste)
 async function relireNonEntendues() {
   const l = [...nonEntendues.values()]; nonEntendues.clear(); indicSon();
@@ -1694,9 +1704,12 @@ function parlerNavigateur(texte) {
   return new Promise(ok => {
     try {
       const u = new SpeechSynthesisUtterance(String(texte).replace(/[*_`#]/g, "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, ""));
-      u.lang = "fr-FR"; u.onend = () => ok(true); u.onerror = () => ok(false);
+      // 2026-11-23 : sur Android, « speaking » peut rester vrai sans que la fin arrive jamais : la lecture restait « en cours » et Annuler affiché
+      let garde = 0; const fin = v => { clearTimeout(garde); ok(v); };
+      u.lang = "fr-FR"; u.onend = () => fin(true); u.onerror = () => fin(false);
       speechSynthesis.cancel(); speechSynthesis.speak(u);
-      setTimeout(() => { if (!speechSynthesis.speaking && !speechSynthesis.pending) ok(false); }, 3500);
+      setTimeout(() => { if (!speechSynthesis.speaking && !speechSynthesis.pending) fin(false); }, 3500);
+      garde = setTimeout(() => { try { speechSynthesis.cancel(); } catch (x) {} fin(false); }, 6000 + 150 * u.text.length);
     } catch (x) { ok(false); }
   });
 }
@@ -2245,9 +2258,28 @@ function annulable2(e) {
   if (local === "attente" || local === "envoi" || local === "parle" || lecture || Sortie.recents() > 0) return true;
   return conv === "nova" && connecte && (e === "envoi" || e === "reflechit" || e === "parle");
 }
+// 2026-11-23 : dans le fil, seul un vrai travail compte. Une réponse arrivée dont le son attend un toucher n'a plus rien à annuler
+// (la pastille « Toucher pour entendre » s'en occupe), et l'état regardé est celui du PC, pas la lecture locale.
+function annulableFil() {
+  if (local === "ecoute" || (novaEtat === "permission" && conv === "nova")) return false;
+  if (local === "attente" || local === "envoi" || Sortie.recents() > 0) return true;
+  if ((local === "parle" || lecture) && !sonBloque) return true;
+  const ne = etatConv();
+  return conv === "nova" && connecte && (ne === "envoi" || ne === "reflechit" || ne === "parle");
+}
 function majAnnuler(e) {
-  const b = $("btnAnnuler"); if (!b || b.classList.contains("fait")) return;
-  b.classList.toggle("vu", annulable(e));
+  const b = $("btnAnnuler"), s = $("saisie"); if (!b || !s) return;
+  const dansFil = filOuvert();
+  if (!("_suivant" in b)) b._suivant = b.nextSibling;   // sa place d'origine dans la scène
+  if (dansFil && b.parentNode !== s) s.insertBefore(b, $("envoyer"));
+  else if (!dansFil && b.parentNode === s) $("scene").insertBefore(b, b._suivant);
+  if (!b.classList.contains("fait")) {
+    if (e === undefined) { const ne = etatConv(); e = local === "attente" ? (ne === "repos" ? "envoi" : ne) : (local || ne); }
+    let oui = false;
+    try { oui = dansFil ? annulableFil() : annulable(e); } catch (x) { oui = false; }   // appelé avant que tout soit prêt au démarrage
+    b.classList.toggle("vu", oui);
+  }
+  s.classList.toggle("avecAnnuler", dansFil && (b.classList.contains("vu") || b.classList.contains("fait")));
 }
 async function annuler() {
   const b = $("btnAnnuler");
@@ -2271,6 +2303,9 @@ async function annuler() {
   if (mainsLibres) { reecouter = true; setTimeout(suite, 900); }
 }
 $("btnAnnuler").onclick = () => { deverrouillerSon(); annuler(); };
+$("btnAnnuler").addEventListener("mousedown", ev => { if (ev.currentTarget.parentNode === $("saisie")) ev.preventDefault(); });   // le clavier reste ouvert
+{ const suivre = new MutationObserver(() => majAnnuler());   // une seule règle : le bouton suit toute ouverture ou fermeture du fil
+  [$("app"), $("vueFil"), ...document.querySelectorAll(".feuille")].forEach(x => suivre.observe(x, { attributes: true, attributeFilter: ["class", "hidden"] })); }
 // 2026-11-09 memos : bouton d'export dans les réglages, avec le nombre de mémos en attente
 { const bx = document.getElementById("optExport"); if (bx) bx.onclick = () => Sortie.exporter();
   setInterval(() => { const n = document.getElementById("optExportN"); if (n) { const k = Sortie.nb(); n.textContent = k ? "(" + k + " en attente)" : "(aucun)"; } }, 2000); }
