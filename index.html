@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="782f5723f12b8564">
+<meta name="nova-version" content="bdba163735285109">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -370,6 +370,7 @@ header .esp { flex: 1; }
 #envoyer { color: #1a1408; background: linear-gradient(180deg, #f2e3bc, #d9c18c); }
 #fermerSaisie { color: var(--txt2); }
 #dicterSaisie { color: var(--txt2); background: rgba(255, 255, 255, .05); border: 1px solid var(--bord); }
+#dicterSaisie.enCours { color: #ffd0d0; background: rgba(160, 30, 45, .55); border-color: rgba(255, 120, 120, .7); }
 
 #toast { position: fixed; z-index: 12; left: 50%; top: calc(var(--st) + 58px); max-width: calc(100vw - 48px); transform: translate(-50%, -8px);
   padding: 10px 16px; border-radius: 12px; font-size: 13.5px; line-height: 1.4; text-align: center; color: var(--txt); background: rgba(12, 15, 28, .94);
@@ -1632,7 +1633,7 @@ async function boucle() {
       const premier = !connecte; connecte = dejaConnecte = true; attente = 20; seq = d.seq; whisperPC = d.whisper;
       if (novaEtat !== "permission" && d.etat === "permission") { vib([20, 80, 20]); }
       novaEtat = d.etat;
-      if (mainsLibres && !d.mains_libres && d.raison) { arreterMainsLibres(false); toast("Le PC a repris la main."); }
+      if (mainsLibres && !d.mains_libres && d.raison && !dicteeEnCours() && local !== "envoi") { arreterMainsLibres(false); toast("Le PC a repris la main."); }
       if (d.conversations) { const avant = JSON.stringify(convs); convs = d.conversations; if (JSON.stringify(convs) !== avant || premier) dessinerConvs(); }
       if (!historiqueCharge.has(conv)) choisirConv(conv);   // conversation gardée d'une visite précédente
       for (const e of d.entrees) {
@@ -1833,7 +1834,7 @@ function stopLecture() {
 // (IndexedDB, sinon mémoire + localStorage) avant tout envoi, avec un identifiant unique ; il part dans l'ordre, dès que le PC
 // répond, et la copie n'est effacée qu'APRÈS l'accusé de réception du serveur (qui dédoublonne par identifiant).
 const Sortie = (() => {
-  const mem = new Map(); let bdPrete = null, occupe = false, relance = 0, coupure = false;
+  const mem = new Map(); let bdPrete = null, occupe = false, relance = 0, coupure = false, revoir = false, tOrdre = 0;
   const nouvelId = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 12));
   function ouvrir() {
     if (bdPrete) return bdPrete;
@@ -1861,7 +1862,7 @@ const Sortie = (() => {
     let el = document.getElementById("sortie");
     if (!el) {
       el = document.createElement("div"); el.id = "sortie";
-      el.style.cssText = "position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:60;padding:7px 14px;border-radius:999px;background:rgba(40,28,8,.88);border:1px solid rgba(255,200,120,.55);color:#ffd9a0;font:600 13px/1.2 system-ui,sans-serif;display:none;max-width:92vw;text-align:center;pointer-events:auto;cursor:pointer";
+      el.style.cssText = "position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 124px);z-index:60;padding:7px 14px;border-radius:999px;background:rgba(40,28,8,.88);border:1px solid rgba(255,200,120,.55);color:#ffd9a0;font:600 13px/1.2 system-ui,sans-serif;display:none;max-width:92vw;text-align:center;pointer-events:auto;cursor:pointer";
       el.onclick = () => exporter();   // 2026-11-09 memos : toucher la pastille = exporter (Web Share ou téléchargement)
       document.body.appendChild(el);
     }
@@ -1890,14 +1891,14 @@ const Sortie = (() => {
     const a = document.createElement("a"); a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 20000); toast("Fichier memos-nova.json enregistré.", 3000);
   }
-  async function ajouter(it) { it.mid = it.mid || nouvelId(); it.t = it.t || Date.now(); mem.set(it.mid, it); rendre(); await ecrireBd(it); return it; }
+  async function ajouter(it) { it.mid = it.mid || nouvelId(); it.t = it.t || tOrdre || Date.now(); mem.set(it.mid, it); rendre(); await ecrireBd(it); return it; }
   async function sauver(it) { if (it.annule) return; await ecrireBd(it); }
   // 2026-11-12 bouton Annuler : retire les messages récents (même celui en cours d'envoi) et rend leurs identifiants.
   // Les mémos plus anciens (gardés pendant une coupure) ne sont pas touchés : ils restent exportables.
   function annuler(ageMax = 180000) {
     const now = Date.now(), mids = [];
     for (const it of trier()) {
-      if (now - (it.t || 0) > ageMax) continue;
+      if (now - (it.t || 0) > ageMax && !(it.kind === "voix" && !it.fini)) continue;   // la dictée en cours est annulée même très longue
       it.annule = true; mem.delete(it.mid); mids.push(it.mid); ecrireBd(it, true);
     }
     clearTimeout(relance); rendre(); return mids;
@@ -1906,21 +1907,27 @@ const Sortie = (() => {
   async function retirer(it) { mem.delete(it.mid); rendre(); await ecrireBd(it, true); }
   function planifier(ms) { clearTimeout(relance); relance = setTimeout(vider, ms); }
   async function vider() {
-    if (occupe) return; occupe = true;
+    if (occupe) { revoir = true; return; } occupe = true;
     try {
       for (;;) {
-        const it = trier().find(x => !x.pret);
+        // 2026-11-23 : pendant une dictée, rien ne part (l'audio déjà gardé peut être transcrit) ; tout repart juste après, dans l'ordre
+        const dicte = dicteeEnCours();
+        const it = trier().find(x => !x.pret && !(x.enPanne > Date.now()) && (!dicte || x.kind === "voix"));
         // dictées gardées pendant la coupure : transcrites dans l'ordre puis envoyées en UN seul message (pas de bouts de phrases)
-        const prets = trier().filter(x => x.pret);
+        const prets = dicte ? [] : trier().filter(x => x.pret);
         if (prets.length && !(it && it.kind === "voix" && it.fini && it.avise)) {
-          const t = prets.map(x => x.blobs.map(b => b.texte).filter(Boolean).join(" ").trim()).filter(Boolean).join(" ").trim(), manuel = prets.some(x => x.manuel);
-          for (const x of prets) await retirer(x);
-          if (prets.some(x => x.annule)) continue;   // annulé pendant ce temps : rien ne part
+          let t = prets.map(x => x.blobs.map(b => b.texte).filter(Boolean).join(" ").trim()).filter(Boolean).join(" ").trim(); const manuel = prets.some(x => x.manuel);
+          if (t && prets.every(x => x.douteux) && (BRUIT_VOIX.test(t.replace(/[.!?…,;:]+/g, "").trim()) || /sous.?titr|amara\.org|abonne/i.test(t))) t = "";   // envoi forcé sur du silence : pas d'hallucination de Whisper
+          const fins = prets.map(retirer);   // retirés AVANT l'émission : jamais deux fois
+          if (prets.some(x => x.annule)) { await Promise.all(fins); continue; }   // annulé pendant ce temps : rien ne part
+          if (t && local === "ecoute") arreterEcoute();   // écoute au repos (mains libres) : elle laisse la place, elle reprendra après la réponse
           if (local === "envoi") local = "";
-          if (t) envoyerVoix(t, manuel); else { local = ""; maj(); if (mainsLibres) { reecouter = true; setTimeout(suite, 900); } }
+          if (t) { tOrdre = Math.min(...prets.map(x => x.t || Date.now())); try { envoyerVoix(t, manuel); } finally { tOrdre = 0; } }   // garde sa place dans la file
+          else { if (local !== "ecoute") { local = ""; if (manuel) { toi(""); toast("Je n'ai rien entendu."); } if (mainsLibres) { reecouter = true; setTimeout(suite, 900); } } maj(); }
+          await Promise.all(fins);
           continue;
         }
-        if (!it) break;
+        if (!it) { if (dicte && mem.size) planifier(1500); break; }
         if (it.kind === "voix") {
           for (const bl of it.blobs) {
             if (bl.texte != null) continue;
@@ -1935,10 +1942,15 @@ const Sortie = (() => {
               planifier(6000); return;
             }
             coupure = false;
-            if (r && r.erreur && !r.texte) { bl.essais = (bl.essais || 0) + 1; if (bl.essais < 40) { planifier(5000); return; } }
+            if (r && r.erreur && !r.texte) { bl.essais = (bl.essais || 0) + 1; if (bl.essais < 40) { planifier(5000); return; }
+              // 2026-11-23 : transcription en panne : l'audio n'est plus jamais détruit, on réessaie toutes les 5 min sans bloquer les autres messages
+              bl.essais = 0; it.enPanne = Date.now() + 300000; await sauver(it);
+              if (!it.toastPanne) { it.toastPanne = true; toast("Transcription indisponible : ton audio est gardé, je réessaie.", 5000); }
+              if (local === "envoi") { local = ""; toi(""); maj(); if (mainsLibres) { reecouter = true; setTimeout(suite, 900); } }
+              break; }
             bl.texte = (r && r.texte) || ""; bl.blob = null; await sauver(it);
           }
-          if (it.annule) continue;
+          if (it.annule || it.enPanne > Date.now()) continue;
           if (!it.fini) break;   // encore en train de parler : les morceaux déjà finis sont transcrits en avance
           it.pret = true; await sauver(it);   // le tri de tête saute les prêts ; ils partent ensemble au prochain tour de boucle
           continue;
@@ -2002,7 +2014,7 @@ const Sortie = (() => {
         if (local === "attente") { local = ""; reecouter = false; maj(); }
         planifier(Math.min(60000, 5000 * Math.max(1, it.essais - 3))); return;
       }
-    } finally { occupe = false; rendre(); }
+    } finally { occupe = false; rendre(); if (revoir) { revoir = false; planifier(250); } }
   }
   async function restaurer() {
     const d = await ouvrir(); let liste = [];
@@ -2285,6 +2297,7 @@ async function annuler() {
   const b = $("btnAnnuler");
   const mids = Sortie.annuler();
   const avait = { lecture: !!lecture, local };
+  srTexte = null; if (enreg) { enreg.annuler(true); enreg = null; } arreterEcoute();   // 2026-11-23 : la dictée en cours est jetée, rien ne repart
   stopLecture();
   for (const x of file) jouees.add(x.id); file.length = 0;   // les réponses déjà arrivées ne seront pas lues
   if (ST.id && !ST.fin) finirSousTitre(ST.id);
@@ -2352,6 +2365,10 @@ $("fermerSaisie").onclick = () => {
 let dejaTape = "";   // 2026-11-14 : texte tapé puis micro : les deux partent ensemble (avec les images)
 $("dicterSaisie").addEventListener("click", () => {
   deverrouillerSon();
+  if (dicteeEnCours()) {   // 2026-11-23 : pendant une dictée, ce bouton la finit et l'envoie (avant : il la coupait et en relançait une autre)
+    const tape = $("champ").value.trim(); if (tape) { dejaTape = dejaTape ? dejaTape + " " + tape : tape; $("champ").value = ""; }
+    vib(8); finirEcoute(); maj(); return;
+  }
   if (window.MediaRecorder && !micOuvert()) ouvrirMicro().then(f => { if (!f) expliquerMicro(); });   // dans le geste
   dejaTape = $("champ").value.trim(); $("champ").value = "";
   fermerSaisie(); vib(8); ecouter();
@@ -2406,7 +2423,7 @@ $("saisie").addEventListener("submit", ev => { ev.preventDefault(); deverrouille
 // ÉCOUTER : reconnaissance du téléphone, ou audio transcrit par le PC (en talkie : jusqu'à ce qu'on lâche)
 // =====================================================================================================
 const SILENCE = 1900, SILENCE_PC = 2200, PATIENCE = 20000;   // comme sur le PC : 2,8 s de silence = envoi ; rien pendant 20 s = pause
-let reco = null, enreg = null, ecouteId = 0, ecouteFinir = null;
+let reco = null, enreg = null, ecouteId = 0, ecouteFinir = null, finirDesPret = false;
 function ecouter(talkie = false, calme = false) {
   stopLecture(); arreterEcoute();
   if (micCoupe) { if (!calme) { vib([8, 40, 8]); toast("Micro coupé · touche le petit micro barré pour le rallumer.", 3200); } maj(); return; }   // 2026-11-13 : rien n'est écouté
@@ -2418,11 +2435,17 @@ function ecouter(talkie = false, calme = false) {
 let srTexte = null;
 function arreterEcoute() {
   if (srTexte) { const t = srTexte(); srTexte = null; if (t) { if (brouillon.length) envoyerGroupe(t); else Sortie.ajouter({ kind: "texte", texte: t, conv }).then(() => Sortie.vider()); toast("Ta dictée est gardée : elle part quand même.", 3500); } }
-  ecouteId++; ecouteFinir = null;
+  ecouteId++; ecouteFinir = null; finirDesPret = false;
   if (reco) { try { reco.onend = null; reco.abort(); } catch (x) {} reco = null; }
   if (enreg) { enreg.annuler(); enreg = null; }
   niveauMicro = 0; ptt = false;
   if (local === "ecoute") local = "";
+}
+// 2026-11-23 : vraie dictée en cours (pas la simple écoute au repos des mains libres) : rien ne doit l'interrompre
+function dicteeEnCours() { if (local !== "ecoute") return false; if (reco) return true; return !enreg || enreg.actif(); }
+function finirEcoute() {   // « j'ai fini » : finit et envoie ; micro encore en ouverture = dès qu'il est prêt
+  if (ecouteFinir) ecouteFinir(true);
+  else if (local === "ecoute" && !enreg) { if (reco || !window.MediaRecorder) arreterEcoute(); else finirDesPret = true; }
 }
 function fusion(results) {   // Android répète parfois les morceaux (« bonjour », « bonjour comment ») : on fusionne
   const out = [];
@@ -2615,40 +2638,46 @@ async function ecouterPC(id, utt = null, calme = false) {
   if (!window.MediaRecorder && SR) { return ecouterTelephone(id); }
   const manuel = ptt || !mainsLibres;
   const flux = await ouvrirMicro();
-  if (!flux) { expliquerMicro(); local = ""; ptt = false; maj(); return; }
+  if (!flux) { finirDesPret = false; expliquerMicro(); local = ""; ptt = false; maj(); return; }
   if (id !== ecouteId) { if (!mainsLibres) fermerMicro(); return; }
   micActif(true);
   const types = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm", "audio/ogg;codecs=opus"];
   const type = types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || "";
   const rec = new MediaRecorder(flux, type ? { mimeType: type } : undefined), bouts = [];
   const an = micAn, buf = new Float32Array(an.fftSize);
-  let fond = -60, parle = !!utt, fortTotal = utt ? 9999 : 0, relance = false, fortDepuis = 0, dernierFort = utt ? Date.now() : 0, debut = Date.now(), annule = false, rotation = false, garde = false;
+  let fond = -60, parle = !!utt, fortTotal = utt ? 9999 : 0, relance = false, fortDepuis = 0, dernierFort = utt ? Date.now() : 0, debut = Date.now(), annule = false, rotation = false, garde = false, forcer = false, dureeFin = 0;
   const fermer = () => { clearInterval(minut); niveauMicro = 0; if (!rotation) chronoFin(); };
   if (!utt && (manuel || !mainsLibres)) chronoDebut(); else if (utt) chronoFin(true);   // mains libres : « j'enregistre » seulement quand il parle (plus de clignotement toutes les 20 s)   // le micro, lui, reste ouvert en mains libres
-  enreg = { annuler: (jeter) => { if ((parle && !jeter) || utt) garde = true; else annule = true; fermer(); try { rec.stop(); } catch (x) {} if (!mainsLibres) fermerMicro(); } };
-  ecouteFinir = (envoi) => { ecouteFinir = null; if (!envoi) { enreg && enreg.annuler(); enreg = null; local = ""; ptt = false; maj(); return; }
-    if (Date.now() - debut > 700) parle = parle || ptt || !mainsLibres; fermer(); try { rec.stop(); } catch (x) {} };
+  enreg = { actif: () => forcer || manuel || parle || !!utt || Date.now() - dernierFort < 800,
+    annuler: (jeter) => { if (jeter) annule = true; else if (parle || utt || (manuel && Date.now() - debut > 700)) garde = true; else annule = true; fermer(); try { rec.stop(); } catch (x) {} if (!mainsLibres) fermerMicro(); } };
+  ecouteFinir = (envoi) => { if (envoi && rotation) { finirDesPret = true; return; } ecouteFinir = null; if (!envoi) { enreg && enreg.annuler(); enreg = null; local = ""; ptt = false; maj(); return; }
+    forcer = true; dureeFin = Date.now() - debut; fermer(); try { rec.stop(); } catch (x) {} };   // 2026-11-23 : le bouton envoie toujours, même voix faible
   rec.ondataavailable = ev => { if (ev.data && ev.data.size) bouts.push(ev.data); };
   rec.onstop = async () => {
     if (rotation) {   // coupe propre d'un très long discours : ce morceau est gardé, l'enregistrement suivant a déjà démarré
-      if (bouts.length) { utt.blobs.push({ blob: new Blob(bouts, { type: rec.mimeType || type || "audio/webm" }), texte: null }); await Sortie.sauver(utt); Sortie.vider(); }
+      if (utt.annule) return;
+      if (bouts.length) utt.blobs.push({ blob: new Blob(bouts, { type: rec.mimeType || type || "audio/webm" }), texte: null });
+      if (id !== ecouteId) utt.fini = true;   // la suite a été arrêtée pendant la coupe : la dictée est complète
+      await Sortie.sauver(utt); Sortie.vider();
       return;
     }
     if (garde) {   // 2026-11-07 : couper les mains libres (ou relancer l'écoute) en plein discours ne jette RIEN : ça part
       const blob = new Blob(bouts, { type: rec.mimeType || type || "audio/webm" });
       if (utt) { if (bouts.length) utt.blobs.push({ blob, texte: null }); utt.fini = true; await Sortie.sauver(utt); }
-      else await Sortie.ajouter({ kind: "voix", blobs: [{ blob, texte: null }], fini: true, manuel: true, conv });
-      toast("Ta dictée est gardée : elle part quand même.", 3500); Sortie.vider(); return;
+      else await Sortie.ajouter({ kind: "voix", blobs: [{ blob, texte: null }], fini: true, manuel: true, douteux: !parle, conv });
+      if (parle || utt) toast("Ta dictée est gardée : elle part quand même.", 3500);
+      Sortie.vider(); return;
     }
-    if (annule || id !== ecouteId) return;
+    if (annule || id !== ecouteId) { if (annule && utt && !utt.annule) { utt.fini = true; await Sortie.sauver(utt); Sortie.vider(); } return; }
     enreg = null; ecouteFinir = null; ptt = false;
     if (!mainsLibres) fermerMicro();
-    if (relance) { enreg = null; ecouteFinir = null; if (id === ecouteId) ecouterPC(id, null, true); return; }   // rien dit depuis 20 s : on repart en silence, sans toucher à l'affichage
-    if (!parle || (!manuel && !utt && fortTotal < 500)) { local = ""; toi(""); maj(); if (mainsLibres) { reecouter = true; setTimeout(suite, 250); } return; }   // rien dit ou simple bruit bref : rien n'est envoyé
+    if (relance && !forcer) { enreg = null; ecouteFinir = null; if (id === ecouteId) ecouterPC(id, null, true); return; }   // rien dit depuis 20 s : on repart en silence, sans toucher à l'affichage
+    if (forcer && !utt && (!bouts.length || dureeFin < 300)) { local = ""; toi(""); toast("Je n'ai rien entendu."); maj(); if (mainsLibres) { reecouter = true; setTimeout(suite, 250); } return; }   // touché avant d'avoir pu parler
+    if (!forcer && (!parle || (!manuel && !utt && fortTotal < 500))) { local = ""; toi(""); maj(); if (mainsLibres) { reecouter = true; setTimeout(suite, 250); } return; }   // rien dit ou simple bruit bref : rien n'est envoyé
     local = "envoi"; toi("…"); maj();
     const blob = new Blob(bouts, { type: rec.mimeType || type || "audio/webm" });
-    if (utt) { utt.blobs.push({ blob, texte: null }); utt.fini = true; utt.manuel = manuel; await Sortie.sauver(utt); }
-    else await Sortie.ajouter({ kind: "voix", blobs: [{ blob, texte: null }], fini: true, manuel, conv });
+    if (utt) { if (bouts.length) utt.blobs.push({ blob, texte: null }); utt.fini = true; utt.manuel = manuel || forcer; await Sortie.sauver(utt); }
+    else await Sortie.ajouter({ kind: "voix", blobs: [{ blob, texte: null }], fini: true, manuel: manuel || forcer, douteux: forcer && !manuel && !parle, conv });
     Sortie.vider();
   };
   rec.start(250);
@@ -2672,6 +2701,7 @@ async function ecouterPC(id, utt = null, calme = false) {
     else if (!parle && now - debut > PATIENCE) { if (mainsLibres && !manuel) relance = true; fermer(); rec.stop(); }
     else if (long) tourner();
   }, 60);
+  if (finirDesPret) { finirDesPret = false; setTimeout(() => { if (id === ecouteId && ecouteFinir) ecouteFinir(true); }, utt ? 150 : 0); }   // touché pendant l'ouverture du micro ou la coupe
 }
 
 // =====================================================================================================
@@ -2705,22 +2735,24 @@ function arreterMainsLibres(prevenir = true) {
 function toucheSimple() {   // ce que fait UNE touche, selon le moment
   deverrouillerSon();
   if (local === "parle" || lecture) { stopLecture(); ecouter(); return; }   // lui couper la parole et parler
-  if (local === "ecoute") { if (ecouteFinir) ecouteFinir(true); else arreterEcoute(); maj(); return; }   // « j'ai fini » : envoyer tout de suite
+  if (local === "ecoute") { finirEcoute(); maj(); return; }   // « j'ai fini » : envoyer tout de suite
   ecouter();
 }
 (() => {
   const b = $("parler");
-  let bas = false, x0 = 0, y0 = 0, tLong = 0, enTalkie = false, dernierTap = 0, tapAttente = 0, annule = false;
+  let bas = false, x0 = 0, y0 = 0, tLong = 0, enTalkie = false, dernierTap = 0, tapAttente = 0, annule = false, dejaEcoute = false, longSurEcoute = false;
   b.addEventListener("contextmenu", e => e.preventDefault());
   b.addEventListener("pointerdown", ev => {
     if (ev.button > 0) return;
-    bas = true; annule = false; enTalkie = false; x0 = ev.clientX; y0 = ev.clientY; b.classList.add("appui");
+    bas = true; annule = false; enTalkie = false; dejaEcoute = local === "ecoute"; longSurEcoute = false; x0 = ev.clientX; y0 = ev.clientY; b.classList.add("appui");
     try { b.setPointerCapture(ev.pointerId); } catch (x) {}
     deverrouillerSon();
     if (window.MediaRecorder && !micOuvert()) ouvrirMicro().then(f => { if (!f) expliquerMicro(); });   // dans le geste (synchrone) : la vraie demande de Chrome
     clearTimeout(tLong);
     tLong = setTimeout(() => {   // maintenu : talkie
-      if (!bas || annule) return; enTalkie = true; clearTimeout(tapAttente); tapAttente = 0;
+      if (!bas || annule) return;
+      if (dejaEcoute) { longSurEcoute = true; clearTimeout(tapAttente); tapAttente = 0; return; }   // 2026-11-23 : appui long pendant une écoute = finir et envoyer au relâché
+      enTalkie = true; clearTimeout(tapAttente); tapAttente = 0;
       vib(14); if (local === "parle" || lecture) stopLecture(); ecouter(true);
     }, 330);
   });
@@ -2733,7 +2765,8 @@ function toucheSimple() {   // ce que fait UNE touche, selon le moment
     // 2026-11-12 (2) : au toucher, le pointerdown ne compte pas comme « geste » pour Chrome ; le pointerup, si. Micro pas ouvert = on redemande ICI, en direct.
     if (window.MediaRecorder && !micOuvert() && !micOuvre) ouvrirMicro().then(f => { if (!f) expliquerMicro(); });
     if (annule) return;
-    if (enTalkie) { enTalkie = false; vib(8); if (ecouteFinir) ecouteFinir(true); else if (local === "ecoute") arreterEcoute(); ptt = false; maj(); return; }
+    if (longSurEcoute) { longSurEcoute = false; vib(8); if (local === "ecoute") toucheSimple(); return; }
+    if (enTalkie) { enTalkie = false; vib(8); finirEcoute(); ptt = false; maj(); return; }
     const now = Date.now();
     if (tapAttente && now - dernierTap < 340) {   // double-touche : mains libres
       clearTimeout(tapAttente); tapAttente = 0; dernierTap = 0;
@@ -2745,7 +2778,7 @@ function toucheSimple() {   // ce que fait UNE touche, selon le moment
     else { toucheSimple(); tapAttente = setTimeout(() => { tapAttente = 0; }, 340); }   // tout de suite (un 2e toucher passe en mains libres)
   };
   b.addEventListener("pointerup", relache);
-  b.addEventListener("pointercancel", () => { if (enTalkie && ecouteFinir) ecouteFinir(true); bas = false; enTalkie = false; clearTimeout(tLong); b.classList.remove("appui"); });
+  b.addEventListener("pointercancel", () => { if (enTalkie || longSurEcoute) finirEcoute(); bas = false; enTalkie = false; longSurEcoute = false; clearTimeout(tLong); b.classList.remove("appui"); });
 })();
 $("btnLibre").onclick = () => { vib(10); if (mainsLibres) arreterMainsLibres(); else demarrerMainsLibres(); majBtnLibre(); };
 // 2026-11-13 MICRO COUPÉ : le petit rond en haut à gauche du gros micro. Coupé = l'écoute en cours est jetée, le micro du téléphone
@@ -2781,6 +2814,7 @@ if (lire("nova-libre", "1") !== "0") {
   setTimeout(() => { if (!mainsLibres) avis("Touche l'écran une fois : les mains libres démarrent."); }, 1500);
 }
 setInterval(majBtnLibre, 500);
+setInterval(() => { $("dicterSaisie").classList.toggle("enCours", dicteeEnCours()); }, 300);   // 2026-11-23 : le micro de la barre montre la dictée en cours
 // 2026-11-12 : « Touche l'écran pour activer le micro » le fait vraiment (getUserMedia dans le geste = vraie demande de Chrome)
 addEventListener("pointerup", ev => {
   if (!mainsLibres || micOuvert() || micOuvre || !window.MediaRecorder) return;
