@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="5a19599a95c6f70a">
+<meta name="nova-version" content="17e2e5fc536d1c4a">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -310,7 +310,7 @@ header .esp { flex: 1; }
 .vide { padding: 12px 0; color: var(--txt3); font-size: 13.5px; }
 /* 2026-11-21 le fil en vraies bulles (DA Braise & Cendre) : Nova à gauche (lueur or/braise douce), toi à droite (bleu),
    coins arrondis, espacement aéré, arrivée douce. Médias (image/vidéo) et réécoute d'une bulle restent intacts. */
-#fil { display: flex; flex-direction: column; gap: 9px; padding: 10px 2px 72px; }
+#fil { display: flex; flex-direction: column; gap: 9px; padding: 10px 2px calc(var(--barreFil, 60px) + 12px); }
 .msg { position: relative; align-self: flex-start; max-width: 85%; padding: 9px 13px 10px; border-radius: 17px;
   font-size: 15px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: anywhere;
   border: 1px solid transparent; animation: msgEntre .42s var(--ressort) both; }
@@ -1419,7 +1419,7 @@ function afficher(e) {
 $("fil").addEventListener("click", ev => {   // toucher une réponse : la réécouter
   const m = ev.target.closest(".msg.nova"); if (!m) return;
   if (getSelection && String(getSelection()).length) return;
-  deverrouillerSon(); arreterEcoute(); fermerFeuilles(); vib(8); relire(JSON.parse(m.dataset.e).texte, m);
+  deverrouillerSon(); arreterEcoute(); vib(8); relire(JSON.parse(m.dataset.e).texte, m);
 });
 
 const vusAgents = new Set(JSON.parse(lire("nova-agents-vus", "[]")));
@@ -1543,7 +1543,11 @@ function ouvrirConvs(onglet) {
   if (ongletF === "ciel") { chargerRecentes(); fermerSaisie(); }
   else { $("saisie").classList.add("vu"); try { posBrouillon(); } catch (e) {} }   // 2026-11-22 : écrire directement DANS le fil (barre visible, clavier au toucher)
 }
-function fermerFeuilles() { document.querySelectorAll(".feuille").forEach(f => { f.classList.remove("vu"); f.style.transform = ""; }); $("voile").classList.remove("vu"); fermerSaisie(); }
+function filOuvert() {   // 2026-11-23 : une seule règle, tant qu'un fil est à l'écran la barre d'écriture y reste
+  if ($("convsF").classList.contains("vu")) return !$("vueFil").hidden;
+  return !document.querySelector(".feuille.vu") && !!(window.NovaHisto && NovaHisto.ouvert());
+}
+function fermerFeuilles() { document.querySelectorAll(".feuille").forEach(f => { f.classList.remove("vu"); f.style.transform = ""; }); $("voile").classList.remove("vu"); fermerSaisie(); if (filOuvert()) $("saisie").classList.add("vu"); }
 document.querySelectorAll("#convsF .onglets button").forEach(b => b.onclick = () => ouvrirConvs(b.dataset.o));
 $("voile").onclick = fermerFeuilles;
 $("btnConvs").onclick = () => ouvrirConvs("fil");
@@ -2272,9 +2276,14 @@ function majUsage(u) {
   el.innerHTML = [bloc("Claude", "claude", "sem", "5h"), bloc("GPT", "chatgpt", "sem", "5h"), bloc("Gemini", "gemini", "", "jour")].filter(Boolean).join('<span style="opacity:.35"> &nbsp;|&nbsp; </span>');
 }
 function ouvrirSaisie() { fermerFeuilles(); arreterEcoute(); if (window.NovaHisto && !NovaHisto.ouvert()) NovaHisto.basculer(true, true); if (dejaTape) { $("champ").value = dejaTape; dejaTape = ""; } $("saisie").classList.add("vu"); setTimeout(() => { $("champ").focus(); posBrouillon(); }, 60); posBrouillon(); vib(5); maj(); }
-function fermerSaisie() { $("saisie").classList.remove("vu"); $("champ").blur(); posBrouillon(); }
+function fermerSaisie() { $("champ").blur(); if (!filOuvert()) $("saisie").classList.remove("vu"); posBrouillon(); }
 $("btnEcrire").onclick = ouvrirSaisie;
-$("fermerSaisie").onclick = fermerSaisie;
+let champActif = false;
+$("fermerSaisie").addEventListener("pointerdown", () => { champActif = document.activeElement === $("champ"); });
+$("fermerSaisie").onclick = () => {
+  if (champActif || !filOuvert()) { champActif = false; fermerSaisie(); return; }
+  if ($("convsF").classList.contains("vu")) fermerFeuilles(); else NovaHisto.basculer(false);
+};
 let dejaTape = "";   // 2026-11-14 : texte tapé puis micro : les deux partent ensemble (avec les images)
 $("dicterSaisie").addEventListener("click", () => {
   deverrouillerSon();
@@ -2292,7 +2301,7 @@ $("saisie").addEventListener("submit", ev => { ev.preventDefault(); deverrouille
   const html = document.documentElement, saisie = $("saisie"), champ = $("champ"), app = $("app");
   const vv = window.visualViewport, vk = navigator.virtualKeyboard;
   const android = /Android/i.test(navigator.userAgent);
-  let hVk = 0, minuteur = 0;
+  let hVk = 0, minuteur = 0, dernierK = 0;
   try { if (vk) vk.overlaysContent = true; } catch (x) {}
   const ouverte = () => saisie.classList.contains("vu");
   const mesurer = () => {
@@ -2303,12 +2312,14 @@ $("saisie").addEventListener("submit", ev => { ev.preventDefault(); deverrouille
   };
   function suivre() {
     const k = mesurer(), o = ouverte();
-    if (k) html.classList.remove("saisieHaut");
+    if (k || document.activeElement !== champ) html.classList.remove("saisieHaut");
     saisie.style.bottom = k ? k + "px" : "";   // 0 : la règle CSS (env(keyboard-inset-height)) reste en secours
     html.style.setProperty("--clavier", k + "px");
     html.classList.toggle("ecrit", o);
     html.style.setProperty("--appBas", o && !html.classList.contains("saisieHaut") ? (k + saisie.offsetHeight) + "px" : "0px");
     if (!o) html.classList.remove("saisieHaut");
+    html.style.setProperty("--barreFil", (o && !html.classList.contains("saisieHaut") ? k + saisie.offsetHeight : 48) + "px");
+    if (k !== dernierK) { dernierK = k; if (k && o && !$("vueFil").hidden) requestAnimationFrame(() => { const c = $("vueFil"); c.scrollTop = c.scrollHeight; }); }
     posBrouillon();
   }
   window.novaClavier = { suivre, mesurer };
@@ -2318,7 +2329,7 @@ $("saisie").addEventListener("submit", ev => { ev.preventDefault(); deverrouille
   champ.addEventListener("focus", () => {
     suivre(); clearTimeout(minuteur);
     // aucun clavier mesurable sur Android après 700 ms : la barre passe en haut
-    minuteur = setTimeout(() => { if (android && document.activeElement === champ && !mesurer()) { html.classList.add("saisieHaut"); suivre(); } }, 700);
+    minuteur = setTimeout(() => { if (android && !vk && document.activeElement === champ && !mesurer()) { html.classList.add("saisieHaut"); suivre(); } }, 700);
     setTimeout(() => { try { champ.scrollIntoView({ block: "nearest" }); } catch (x) {} if (scrollY) scrollTo(0, 0); }, 350);
   });
   champ.addEventListener("blur", () => { clearTimeout(minuteur); setTimeout(suivre, 60); });
@@ -2717,7 +2728,7 @@ $("permOui").onclick = () => { vib(10); api("/api/permission", { accepter: true 
 $("permNon").onclick = () => { vib(10); api("/api/permission", { accepter: false }).catch(() => {}); };
 $("btnReglages").onclick = () => {
   fermerFeuilles(); const r = document.querySelector(`input[name=moteur][value=${moteur}]`); if (r) r.checked = true; $("optVibre").checked = vibrer; $("optReveil").checked = reveilNova;
-  $("reglagesF").classList.add("vu"); $("voile").classList.add("vu");
+  $("reglagesF").classList.add("vu"); $("voile").classList.add("vu"); fermerSaisie();
 };
 document.querySelectorAll("input[name=moteur]").forEach(r => r.onchange = () => { moteur = r.value; garder("nova-moteur2", moteur); maj(); });
 $("optReveil").onchange = () => { reveilNova = $("optReveil").checked; garder("nova-reveil", reveilNova ? "1" : "0"); fenetreJusqua = 0; toast(reveilNova ? "Dis « Nova » avant ta phrase." : "Mot de réveil coupé : je réponds à tout."); };
@@ -2868,6 +2879,7 @@ window.NovaHisto = (() => {
     $("histoOuvrir").setAttribute("aria-expanded", String(oui)); $("histoOuvrir").classList.remove("nouveau");
     if (!discret) vib(6);
     if (oui) { if (conv !== affichee) dessiner(); titre(); requestAnimationFrame(() => enDescendant(false)); }
+    if (filOuvert()) $("saisie").classList.add("vu"); else fermerSaisie();
   }
   $("histoOuvrir").onclick = ev => { ev.stopPropagation(); basculer(true); };
   $("histoFermer").onclick = ev => { ev.stopPropagation(); basculer(false); };
