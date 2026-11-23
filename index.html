@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="bdba163735285109">
+<meta name="nova-version" content="90a11b3c7464ba23">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -2697,7 +2697,7 @@ async function ecouterPC(id, utt = null, calme = false) {
     if (rotation) return;
     const long = (now - debut > 60000 && now - dernierFort > 450) || now - debut > 100000;   // pause naturelle après 60 s, sinon coupe à 100 s
     if (ptt || manuel) { if (long) tourner(); return; }   // 2026-11-07 : il décide seul de la fin (2e toucher / relâché) ; jamais d'arrêt aux pauses
-    if (parle && now - dernierFort > SILENCE_PC) { fermer(); rec.stop(); }
+    if (parle && now - dernierFort > Math.min(6000, SILENCE_PC + fortTotal * .25)) { fermer(); rec.stop(); }   // 2026-11-23 : plus il parle longtemps, plus il a le droit de réfléchir (2,2 s pour une phrase courte, jusqu'à 6 s)
     else if (!parle && now - debut > PATIENCE) { if (mainsLibres && !manuel) relance = true; fermer(); rec.stop(); }
     else if (long) tourner();
   }, 60);
@@ -2738,9 +2738,10 @@ function toucheSimple() {   // ce que fait UNE touche, selon le moment
   if (local === "ecoute") { finirEcoute(); maj(); return; }   // « j'ai fini » : envoyer tout de suite
   ecouter();
 }
+let tapAttente = 0;   // lu aussi par novaCalme (mise à jour automatique)
 (() => {
   const b = $("parler");
-  let bas = false, x0 = 0, y0 = 0, tLong = 0, enTalkie = false, dernierTap = 0, tapAttente = 0, annule = false, dejaEcoute = false, longSurEcoute = false;
+  let bas = false, x0 = 0, y0 = 0, tLong = 0, enTalkie = false, dernierTap = 0, annule = false, dejaEcoute = false, longSurEcoute = false;
   b.addEventListener("contextmenu", e => e.preventDefault());
   b.addEventListener("pointerdown", ev => {
     if (ev.button > 0) return;
@@ -2821,7 +2822,7 @@ addEventListener("pointerup", ev => {
   if (ev.target && ev.target.closest && ev.target.closest("#saisie, #parler, #btnLibre, input, textarea, button, a")) return;
   ouvrirMicro().then(f => { if (!f) { expliquerMicro(); return; } maj(); if (mainsLibres && !local && !lecture) { reecouter = true; suite(); } });
 }, true);
-window.novaCalme = () => !local && !lecture && !file.length && !tapAttente;   // pour la mise à jour automatique (appli.js)
+window.novaCalme = () => (!local || (local === "ecoute" && mainsLibres && !dicteeEnCours())) && !lecture && !file.length && !tapAttente && !$("champ").value.trim() && !brouillon.length;   // pour la mise à jour automatique (appli.js) : jamais pendant une dictée, un envoi, une lecture ou un texte en cours
 $("orbe").addEventListener("click", () => { vib(8); toucheSimple(); });   // l'orbe aussi : parler / couper la parole / envoyer
 $("permOui").onclick = () => { vib(10); api("/api/permission", { accepter: true }).catch(() => {}); };
 $("permNon").onclick = () => { vib(10); api("/api/permission", { accepter: false }).catch(() => {}); };
