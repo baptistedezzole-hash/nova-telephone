@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="0358a929802a54c2">
+<meta name="nova-version" content="5a19599a95c6f70a">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -1566,7 +1566,7 @@ document.querySelectorAll(".feuille").forEach(f => {   // tirer la feuille vers 
   app.addEventListener("touchstart", ev => { if (ev.target.closest("#parler,#perm,#saisie,#histo,#histoOuvrir")) { y0 = null; return; } x0 = ev.touches[0].clientX; y0 = ev.touches[0].clientY; t0 = Date.now(); }, { passive: true });
   app.addEventListener("touchend", ev => {
     if (y0 == null) return; const t = ev.changedTouches[0], dy = t.clientY - y0, dx = t.clientX - x0; y0 = null;
-    if (Date.now() - t0 < 700 && -dy > 60 && Math.abs(dx) < -dy * .8) ouvrirConvs("ciel");
+    if (Date.now() - t0 < 700 && -dy > 60 && Math.abs(dx) < -dy * .8) ouvrirConvs("fil");
   }, { passive: true });
 })();
 
