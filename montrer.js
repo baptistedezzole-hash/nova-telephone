@@ -366,7 +366,7 @@
   addEventListener("online", () => setTimeout(viderFile, 1200));
   if (lireFile().length) setTimeout(viderFile, 4000);
 
-  window.NovaMontrer = { ouvrir: id => ouvrir(partages.find(p => p.id === id), true), fermer, sonder, _etat: () => ({ partages, ouvert, rot, srv }), _choisir: choisirBouton,
+  window.NovaMontrer = { ouvrir: id => ouvrir(partages.find(p => p.id === id), true), ouvrirPartage: p => ouvrir(p, true), fermer, sonder, _etat: () => ({ partages, ouvert, rot, srv }), _choisir: choisirBouton,
     ecrire: ouvrirMot, _composer: composer, _fileMots: lireFile };
   poserBouton();
   setTimeout(sonder, 1500);
