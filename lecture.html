@@ -8,9 +8,12 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Music&display=swap">
 <!-- 2026-11-24 : l'exercice « Lecture de notes » (une note à la fois + lecture en avance) pour le téléphone.
-     Page autonome : aucune bibliothèque, rien n'est envoyé nulle part. Le micro du téléphone écoute le piano :
+     Page autonome : aucune bibliothèque. Le micro du téléphone écoute le piano (le son ne quitte jamais le téléphone) :
      la hauteur est trouvée ici même (autocorrélation normalisée), seul le nom de la note compte (pas l'octave).
-     Records et réglages gardés dans ce navigateur seulement. -->
+     Records et réglages gardés dans ce navigateur ; 2026-11-24 synchro : records, essais et niveau sont aussi
+     envoyés au PC (serveur de Nova, /api/montrer/lecture, avec la clé de l'appareil déjà relié, jamais à GitHub)
+     et fusionnés avec ceux de l'appli du PC : meilleur record gardé, essais cumulés sans doublon. PC injoignable :
+     tout reste ici et part au retour. -->
 <style>
 :root{
   --fond:#07041a; --fond2:#120b2e; --texte:#f4efff; --doux:#b9b0d6; --ligne:#2b2156;
@@ -127,10 +130,97 @@ select{width:100%;font:inherit;font-size:15px;color:var(--texte);background:var(
     d = d && typeof d === "object" ? d : {};
     return { niveau: borne(+d.niveau || 0, 0, NIVEAUX.length - 1), mode: d.mode === "une" ? "une" : "avance",
       cache: borne(+d.cache || 0, 0, 5), n: borne(+d.n || 10, 3, 30),
-      records: d.records && typeof d.records === "object" ? d.records : {}, essais: Array.isArray(d.essais) ? d.essais.slice(-60) : [] };
+      records: d.records && typeof d.records === "object" ? d.records : {}, essais: Array.isArray(d.essais) ? d.essais.slice(-MAX_ESSAIS) : [],
+      niveau_t: +d.niveau_t || 0 };
   }
+  const MAX_ESSAIS = 300;
   const D = charger();
   function sauver() { try { localStorage.setItem(CLE_STOCK, JSON.stringify(D)); } catch (e) { /* navigation privée : tant pis */ } }
+  const nouvelId = () => {
+    try { const b = new Uint8Array(9); crypto.getRandomValues(b); return "t" + Array.from(b, (x) => x.toString(16).padStart(2, "0")).join(""); }
+    catch (e) { return "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); }
+  };
+  // les anciens essais (sans id) en reçoivent un, une fois pour toutes : le PC ne les comptera qu'une fois
+  D.essais.forEach((x) => { if (x && typeof x === "object" && !x.id) x.id = nouvelId(); });
+
+  // ---------- 2026-11-24 synchro avec le PC (serveur de Nova, clé de l'appareil déjà relié) ----------
+  // Rien ne part vers GitHub : seulement vers le tunnel ou l'adresse Wi-Fi que l'appli Nova a enregistrés dans ce
+  // téléphone (nova-conf-v1). Sans clé ou sans réseau : on garde tout ici et on réessaie plus tard.
+  const TUNNEL_OK = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/;
+  const WIFI_OK = /^https:\/\/(10|192\.168|172\.(1[6-9]|2\d|3[01]))(\.\d{1,3}){2,3}(:\d+)?$/;
+  const SY = { etat: "jamais", dernier: 0, envoyes: 0, recus: 0, erreur: "" };
+  let enCours = null;
+  function confNova() {
+    try { const c = JSON.parse(localStorage.getItem("nova-conf-v1") || "null"); return c && typeof c === "object" ? c : null; } catch (e) { return null; }
+  }
+  const meilleur = (a, b) => (!a || (b && +b.ms > 0 && +b.ms < +a.ms) ? b : a);
+  function fusionRecue(r) {
+    if (!r || typeof r !== "object") return false;
+    let change = false;
+    const rec = r.records && typeof r.records === "object" ? r.records : {};
+    for (const k of Object.keys(rec)) {
+      const v = rec[k];
+      if (!v || !(+v.ms > 0)) continue;
+      const m = meilleur(D.records[k], v);
+      if (m !== D.records[k]) { D.records[k] = { ms: +v.ms, moyenne: +v.moyenne || undefined, date: v.date }; change = true; }
+    }
+    const vus = new Set(D.essais.map((x) => x && x.id));
+    for (const x of Array.isArray(r.essais) ? r.essais : []) {
+      if (!x || typeof x !== "object" || !x.id || vus.has(x.id)) continue;
+      vus.add(x.id); D.essais.push(x); change = true;
+    }
+    if (change) {
+      D.essais.sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")) || (+a.t || 0) - (+b.t || 0));
+      D.essais = D.essais.slice(-MAX_ESSAIS);
+    }
+    const n = parseInt(r.niveau, 10), t = +r.niveau_t || 0;
+    if (n >= 0 && n < NIVEAUX.length && t > (D.niveau_t || 0) && n !== D.niveau && S.phase !== "jeu") { D.niveau = n; D.niveau_t = t; change = true; }
+    else if (t > (D.niveau_t || 0) && n === D.niveau) D.niveau_t = t;
+    if (change) { sauver(); if (S.phase === "accueil") peindre(); }
+    return change;
+  }
+  async function envoyerA(base, appareil) {
+    const corps = { records: D.records, essais: D.essais };
+    if (D.niveau_t) { corps.niveau = D.niveau; corps.niveau_t = D.niveau_t; }
+    const ctl = typeof AbortController === "function" ? new AbortController() : null;
+    const minuteur = ctl ? setTimeout(() => ctl.abort(), 8000) : 0;
+    try {
+      const meme = !base;
+      const r = await fetch((base || "") + "/api/montrer/lecture", { method: "POST", cache: "no-store",
+        mode: meme ? "same-origin" : "cors", credentials: meme ? "same-origin" : "omit",
+        headers: Object.assign({ "Content-Type": "application/json" }, appareil ? { "X-Nova-Appareil": appareil } : {}),
+        body: JSON.stringify(corps), signal: ctl ? ctl.signal : undefined });
+      if (!r.ok) return { ok: false, statut: r.status };
+      return { ok: true, d: await r.json() };
+    } finally { clearTimeout(minuteur); }
+  }
+  function synchro() {
+    if (enCours) return enCours;
+    enCours = (async () => {
+      const c = confNova(), appareil = c && typeof c.appareil === "string" ? c.appareil : "";
+      const surGitHub = /\.github\.io$/.test(location.hostname);
+      const bases = [];
+      if (!surGitHub && location.protocol === "https:") bases.push("");   // page servie par Nova elle-même
+      if (c && WIFI_OK.test(c.local || "")) bases.push(c.local);
+      if (c && TUNNEL_OK.test(c.base || "")) bases.push(c.base);
+      if (!appareil && surGitHub) { SY.etat = "pas relié"; return false; }
+      if (!bases.length || (typeof navigator.onLine === "boolean" && !navigator.onLine)) { SY.etat = "hors ligne"; return false; }
+      for (const b of bases) {
+        try {
+          const r = await envoyerA(b, appareil);
+          if (r.ok) {
+            SY.etat = "ok"; SY.dernier = Date.now(); SY.envoyes++; SY.erreur = "";
+            if (fusionRecue(r.d)) SY.recus++;
+            return true;
+          }
+          SY.erreur = "statut " + r.statut;
+          if (r.statut === 401 || r.statut === 403) break;   // clé refusée : inutile d'insister ailleurs
+        } catch (e) { SY.erreur = (e && e.name) || "réseau"; }
+      }
+      SY.etat = "en attente"; return false;
+    })().catch(() => false).finally(() => { enCours = null; rapport(); });
+    return enCours;
+  }
   if (params.get("mode") === "une" || params.get("mode") === "avance") D.mode = params.get("mode");
   if (params.has("niveau")) D.niveau = borne((parseInt(params.get("niveau"), 10) || 1) - 1, 0, NIVEAUX.length - 1);
   if (params.has("cache")) D.cache = borne(parseInt(params.get("cache"), 10) || 0, 0, 5);
@@ -246,8 +336,9 @@ select{width:100%;font:inherit;font-size:15px;color:var(--texte);background:var(
     const mesure = A.mode === "une" ? moyenne : total;
     const record = A.fautes === 0 && (!ancien || mesure < ancien.ms);
     if (record) D.records[cle] = { ms: mesure, moyenne, date: jour() };
-    D.essais = D.essais.concat({ date: jour(), mode: A.mode, niveau: D.niveau + 1, cache: A.cache, n: A.n, ms: total, fautes: A.fautes }).slice(-60);
+    D.essais = D.essais.concat({ id: nouvelId(), t: Date.now(), origine: "tel", date: jour(), mode: A.mode, niveau: D.niveau + 1, cache: A.cache, n: A.n, ms: total, fautes: A.fautes }).slice(-MAX_ESSAIS);
     sauver();
+    setTimeout(synchro, 50);   // vers le PC (en silence ; s'il est injoignable, ça repartira plus tard)
     const lente = A.notes.reduce((m, x) => (x.ms > m.ms ? x : m), A.notes[0]);
     const fautives = A.notes.filter((x) => x.fautes).map((x) => x.nom).filter((x, i, t) => t.indexOf(x) === i);
     A.resultat = { ms: total, moyenne_ms: moyenne, fautes: A.fautes, notes: A.n, record, record_ms: D.records[cle] ? D.records[cle].ms : null, fautives };
@@ -419,7 +510,7 @@ select{width:100%;font:inherit;font-size:15px;color:var(--texte);background:var(
   $("#touches").innerHTML = NOMS.map((n) => '<button type="button" data-nom="' + n + '">' + n + "</button>").join("");
   $("#touches").addEventListener("pointerdown", (e) => { const b = e.target.closest("button"); if (b) { e.preventDefault(); if (S.phase !== "jeu") commencer(); repondre(b.dataset.nom, "bouton"); } });
   $("#modes").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b || b.dataset.mode === D.mode) return; D.mode = b.dataset.mode; sauver(); accueil(); });
-  $("#niveau").addEventListener("change", (e) => { D.niveau = borne(+e.target.value, 0, NIVEAUX.length - 1); sauver(); accueil(); });
+  $("#niveau").addEventListener("change", (e) => { D.niveau = borne(+e.target.value, 0, NIVEAUX.length - 1); D.niveau_t = Date.now(); sauver(); accueil(); synchro(); });
   $("#reglages").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
     const r = b.dataset.r;
@@ -441,13 +532,19 @@ select{width:100%;font:inherit;font-size:15px;color:var(--texte);background:var(
     if (!TEST) return;
     const A = S.A;
     $("#test-sortie").textContent = JSON.stringify({ phase: S.phase, mode: D.mode, niveau: D.niveau + 1, micro: M.etat, erreur: M.erreur, entendus: M.entendus,
-      ligne: A ? { cle: A.cle, cur: A.cur, n: A.n, fautes: A.fautes, notes: A.notes.map((x) => x.nom), resultat: A.resultat } : null });
+      ligne: A ? { cle: A.cle, cur: A.cur, n: A.n, fautes: A.fautes, notes: A.notes.map((x) => x.nom), resultat: A.resultat } : null,
+      synchro: SY, records: Object.keys(D.records).length, essais: D.essais.length });
   }
-  window.LECTURE = { hauteur, classeDe, repondre, commencer, etat: () => ({ S, D, M }), NIVEAUX, note };
+  window.LECTURE = { hauteur, classeDe, repondre, commencer, etat: () => ({ S, D, M }), NIVEAUX, note, synchro, etatSynchro: () => SY };
   if (TEST) setInterval(rapport, 200);
 
   accueil();
   micro();
+  // synchro : au démarrage, au retour du réseau ou de la page, et toutes les minutes (jamais en pleine ligne)
+  setTimeout(synchro, 400);
+  window.addEventListener("online", () => synchro());
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) synchro(); });
+  setInterval(() => { if (!document.hidden && S.phase !== "jeu") synchro(); }, 60000);
   if (document.fonts && document.fonts.load) {      // la clé dessinée avec la police musicale dès qu'elle est là
     Promise.race([document.fonts.load("100px \"Noto Music\"", "\u{1D11E}\u{1D122}"), new Promise((ok) => setTimeout(ok, 2500))])
       .then(() => { mesures = {}; peindre(); }).catch(() => null);
