@@ -436,7 +436,10 @@
   }
   setInterval(() => { if (NA.majPrete) appliquerMaj(); }, 4000);
   setInterval(verifierVersion, 5 * 60 * 1000);
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { verifierVersion(); appliquerMaj(); } });
+  // 2026-11-25 : au retour au premier plan, on redemande aussi le service worker (sw.js) : une nouvelle REVISION s'installe tout de suite
+  // au lieu d'attendre la vérification automatique de Chrome (jusqu'à 24 h).
+  const majSW = () => { try { if ("serviceWorker" in navigator) navigator.serviceWorker.getRegistration(RACINE).then(r => r && r.update()).catch(() => {}); } catch (x) {} };
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { verifierVersion(); appliquerMaj(); majSW(); } });
   addEventListener("load", () => setTimeout(verifierVersion, 4000));
 
   // ---------- le service worker ----------
