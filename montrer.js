@@ -9,6 +9,20 @@
   if (window.NovaMontrer) return;
   const $ = id => document.getElementById(id);
   const NA = window.NovaAppli || {};
+  // 2026-11-25 (4) geste retour d'Android : une entrée d'historique par panneau ouvert ; « retour » le ferme (au lieu de
+  // quitter l'appli), la croix aussi (et retire l'entrée). Partagé avec avoir.js (window.NovaRetour).
+  const Retour = window.NovaRetour || (window.NovaRetour = (() => {
+    const pile = []; let ignorer = 0;
+    addEventListener("popstate", () => {
+      if (ignorer) { ignorer--; return; }
+      const f = pile.pop(); if (f) { try { f.fermer(); } catch (x) {} }
+    });
+    return {
+      ouvrir(nom, fermer) { if (pile.some(x => x.nom === nom)) return; pile.push({ nom, fermer }); try { history.pushState({ nova: nom }, ""); } catch (x) {} },
+      fermer(nom) { const i = pile.findIndex(x => x.nom === nom); if (i < 0) return; pile.splice(i, 1); try { ignorer++; history.back(); } catch (x) { ignorer = 0; } },
+      _pile: () => pile.map(x => x.nom),
+    };
+  })());
   const RECENT = 6 * 3600 * 1000;   // ouverture automatique : seulement ce qui a été montré il y a moins de 6 h
   const css = `
 #btnMontre { display:none; width:34px; height:34px; padding:0; border-radius:50%; place-items:center; color:#e9d6a8; border:1px solid rgba(233,214,168,.32); background:rgba(233,214,168,.07); font-size:15px; line-height:1; }
@@ -40,6 +54,8 @@
 #montre .barre button:active { transform:scale(.94); }
 #montre .barre .fermer { width:36px; height:36px; padding:0; font-size:17px; }
 #montre .barre .r { display:none; } #montre.clavier .barre .r { display:flex; }
+#montre .barre .chrome { display:none; } #montre.externe .barre .chrome { display:flex; }
+#montre.externe iframe { background:#fff; }
 #montre .poignee { position:absolute; z-index:2; top:calc(3px + env(safe-area-inset-top,0px)); right:calc(8px + env(safe-area-inset-right,0px)); display:none;
   width:34px; height:34px; border-radius:50%; border:1px solid rgba(233,214,168,.35); background:rgba(10,14,30,.6); color:#e9d6a8; font-size:15px; }
 #montre.plein .poignee { display:grid; place-items:center; }
@@ -108,6 +124,7 @@
 <button class="r or" aria-label="Recommencer (touche R)">↻ R</button>
 <button class="tourner" aria-label="Pivoter">⟳</button>
 <button class="agrandir" aria-label="Plein écran">⤢</button>
+<button class="chrome" aria-label="Ouvrir dans Chrome">↗ Chrome</button>
 <button class="histo" aria-label="Déjà montré">✦</button>
 <button class="ecrire" aria-label="Écrire à Nova">✎</button>
 <button class="fermer" aria-label="Fermer">✕</button></div>
@@ -150,7 +167,10 @@
     if (!ref || !ref.parentNode) return;
     const b = document.createElement("button");
     b.id = "btnMontre"; b.type = "button"; b.setAttribute("aria-label", "Ce que Nova m'a montré"); b.textContent = "✦";
-    b.onclick = () => { const p = choisirBouton(partages, vusTous(), (srv.connu && srv.dernier) || lireDernier(), Date.now()); if (p) ouvrir(p, true); };
+    // 2026-11-25 (4) rien de neuf : la dernière page ouverte AVEC la liste de tout ce qui a été montré (SNCF, etc.)
+    b.onclick = () => { const vus = vusTous(), tous = partages.concat(locaux.filter(x => !partages.some(p => p.id === x.id)));
+      const p = choisirBouton(tous, vus, (srv.connu && srv.dernier) || lireDernier(), Date.now()); if (!p) return;
+      const deja = vus.includes(p.id); ouvrir(p, !deja, deja); };
     ref.parentNode.insertBefore(b, ref);
   }
 
@@ -311,38 +331,82 @@
   }
 
   // 2026-11-25 secours du panneau : gros bouton « Ouvrir le lien » (navigateur / appli du site) ou « Réessayer »
-  function boutonLien(url, titre, reessayer) {
+  function boutonLien(url, titre, reessayer, auto) {
     msg.textContent = "";
     const t = document.createElement("div");
-    t.textContent = url ? "Ce site ne s'affiche pas dans Nova." : "La page ne charge pas.";
+    t.textContent = !url ? "La page ne charge pas." : auto ? "Ce site refuse de s'afficher dans Nova : il s'ouvre dans Chrome. Reviens ici quand tu veux, tout reste dans ✦." : "Ce site ne s'affiche pas dans Nova.";
     msg.appendChild(t);
     const b = document.createElement(url ? "a" : "button");
     b.className = "gros";
     if (url) {
       b.href = (window.NovaChrome && NovaChrome.href(url)) || url; b.target = "_blank"; b.rel = "noopener noreferrer";   // 2026-11-25 (2) vrai Chrome
-      b.textContent = "🔗 Ouvrir le lien";
+      b.textContent = "↗ Ouvrir dans Chrome";
       const s = document.createElement("small");
       try { s.textContent = new URL(url).hostname.replace(/^www\./, ""); } catch (x) {}
       b.appendChild(s);
-      b.onclick = () => setTimeout(fermer, 300);
+      // 2026-11-25 (4) le panneau RESTE ouvert (liste « Déjà montré » pour revenir à une autre page)
     } else { b.type = "button"; b.textContent = "↻ Réessayer"; b.onclick = () => reessayer && reessayer(); }
     msg.appendChild(b);
     msg.classList.add("vu");
   }
 
-  async function ouvrir(p, main) {
-    if (!p) return;
-    if (p.type === "lien") {   // 2026-11-25 (2) dans le vrai Chrome du téléphone (intent Android), sinon onglet normal
-      if (okLien(p.url)) { marquerLien(p.id); if (!(window.NovaChrome && NovaChrome.ouvrir(p.url))) window.open(p.url, "_blank", "noopener,noreferrer"); }
+  // 2026-11-25 (4) « les étoiles ouvrent dans Nova » : un lien s'ouvre DANS le panneau (avec la liste « Déjà montré »
+  // pour revenir aux trajets SNCF…). Le PC dit si le site accepte d'être dans un cadre (integrable) ; sinon Chrome
+  // s'ouvre tout seul par-dessus et le panneau reste là, avec le lien dans la liste et un gros bouton. ↗ = Chrome.
+  const SANDBOX_WEB = "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox";
+  const versChrome = url => { if (!okLien(url)) return false; try { if (window.NovaChrome && NovaChrome.ouvrir(url)) return true; } catch (x) {}
+    try { return !!window.open(url, "_blank", "noopener,noreferrer"); } catch (x) { return false; } };
+  let locaux = [];   // liens ouverts depuis « À voir » : gardés dans la liste de ce panneau
+  async function ouvrirLien(p, main, n) {
+    let d = p.direct ? p : null;
+    if (!d) {
+      try {
+        const r = await fetch("/api/montrer/ouvrir", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: p.id }) });
+        d = r.ok ? await r.json() : null;
+      } catch (x) { d = null; }
+      if (!d) d = { url: p.url, integrable: null };   // PC muet : le lien est connu, on l'ouvre quand même
+    }
+    if (n !== ticket) return;
+    const url = typeof d.url === "string" && okLien(d.url) ? d.url : p.url;
+    if (!okLien(url)) return dire("Rien à afficher ici.");
+    let memeOrigine = false; try { memeOrigine = new URL(url).origin === location.origin; } catch (x) {}
+    ouvert = Object.assign({}, p, { url, taille: null, paysage: false, type: "lien" });
+    if (d.integrable === true && !memeOrigine) {
+      vue = document.createElement("iframe");
+      vue.setAttribute("sandbox", SANDBOX_WEB);
+      vue.setAttribute("allow", "autoplay; fullscreen; clipboard-write");
+      vue.referrerPolicy = "no-referrer";
+      vue.title = p.titre || "Lien";
+      let charge = false;
+      vue.onload = () => { charge = true; if (n === ticket) dire(""); };
+      vue.src = url;
+      scene.appendChild(vue); disposer();
+      setTimeout(() => { if (n === ticket && !charge) boutonLien(url, p.titre); }, 8000);
       return;
     }
+    boutonLien(url, p.titre, null, !!main);   // le site refuse le cadre : Chrome par-dessus, le panneau et la liste restent
+    rendreListe(); P.classList.add("liste-on");   // au retour de Chrome : la liste de tout ce qui a été montré est là
+    if (main) versChrome(url);
+  }
+
+  async function ouvrir(p, main, liste) {
+    if (!p) return;
     const n = ++ticket;
     fermerVue(); ticket = n;
     ouvert = p; rot = null; noterVu(p.id);
     P.querySelector(".titre span").textContent = p.titre || "Nova te montre";
-    P.classList.remove("liste-on", "plein", "mot-on");
+    P.classList.remove("liste-on", "plein", "mot-on", "externe");
+    Retour.ouvrir("montre", fermer);   // geste retour d'Android = ferme le panneau (revient au fil de Nova)
     P.classList.add("vu"); requestAnimationFrame(() => P.classList.add("on"));
-    rendreListe(); dire("Ça arrive…");
+    if (p.type === "lien") {
+      P.classList.add("externe", "fichier");
+      if (p.direct && !partages.some(x => x.id === p.id)) locaux = [p].concat(locaux.filter(x => x.id !== p.id)).slice(0, 10);
+      rendreListe(); if (liste) P.classList.add("liste-on");
+      dire("Ça arrive…");
+      return ouvrirLien(p, main, n);
+    }
+    rendreListe(); if (liste) P.classList.add("liste-on");
+    dire("Ça arrive…");
     let d = null;
     try {
       const r = await fetch("/api/montrer/ouvrir", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: p.id }) });
@@ -385,6 +449,7 @@
   }
 
   function fermer() {
+    Retour.fermer("montre");
     fermerVue(); ouvert = null;
     P.classList.remove("on", "liste-on", "mot-on");
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -393,8 +458,9 @@
 
   function rendreListe() {
     items.innerHTML = "";
-    if (!partages.length) { items.innerHTML = '<div style="padding:8px 12px;color:rgba(226,232,246,.5)">Rien pour l\'instant.</div>'; return; }
-    for (const p of partages) {
+    const tous = partages.concat(locaux.filter(x => !partages.some(p => p.id === x.id))).sort((x, y) => (+y.t || 0) - (+x.t || 0));
+    if (!tous.length) { items.innerHTML = '<div style="padding:8px 12px;color:rgba(226,232,246,.5)">Rien pour l\'instant.</div>'; return; }
+    for (const p of tous) {
       const b = document.createElement("button");
       if (ouvert && ouvert.id === p.id) b.className = "ici";
       b.textContent = p.titre || "Sans titre";
@@ -439,7 +505,8 @@
     } catch (x) {} finally { enCours = false; }
   }
 
-  P.querySelector(".fermer").onclick = fermer;
+  P.querySelector(".fermer").onclick = () => fermer();
+  P.querySelector(".chrome").onclick = () => { if (ouvert && ouvert.type === "lien" && okLien(ouvert.url)) { versChrome(ouvert.url); annoncer("↗ Ouvert dans Chrome : reviens ici avec retour", 3000); } };
   P.querySelector(".histo").onclick = () => { rendreListe(); P.classList.remove("mot-on"); P.classList.toggle("liste-on"); };
   P.querySelector(".tourner").onclick = () => {
     const r = scene.getBoundingClientRect();
@@ -543,7 +610,8 @@
   addEventListener("online", () => setTimeout(viderFile, 1200));
   if (lireFile().length) setTimeout(viderFile, 4000);
 
-  window.NovaMontrer = { ouvrir: id => ouvrir(partages.find(p => p.id === id), true), ouvrirPartage: p => ouvrir(p, true), fermer, sonder, _etat: () => ({ partages, ouvert, rot, srv }), _choisir: choisirBouton,
+  window.NovaMontrer = { ouvrir: id => ouvrir(partages.find(p => p.id === id) || locaux.find(p => p.id === id), true), ouvrirPartage: (p, main = true) => ouvrir(p, main), fermer, sonder,
+    _etat: () => ({ partages, locaux, ouvert, rot, srv, classes: P.className, retour: Retour._pile() }), _choisir: choisirBouton,
     ecrire: ouvrirMot, _composer: composer, _fileMots: lireFile };
   poserBouton();
   P.querySelector(".actions-f .dl").onclick = telecharger;

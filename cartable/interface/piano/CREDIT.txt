@@ -1,0 +1,11 @@
+Echantillons : Salamander Grand Piano V3 (Yamaha C5), Alexander Holm, licence CC-BY 3.0
+(https://creativecommons.org/licenses/by/3.0/). Gratuit, utilisable et redistribuable en citant l'auteur.
+
+Banque de l'ecoute : dossier salamander\ (120 fichiers + manifeste.json, 18,7 Mo).
+Sous-ensemble de l'original 48 kHz 24 bits : 20 hauteurs (une tous les trois demi-tons, de A1 a F#6)
+x 6 forces de frappe (couches 2, 4, 6, 8, 10 et 12), en mp3 stereo 48 kHz. Debut recale, fin fondue,
+niveaux mesures et accord de l'auteur gardes dans manifeste.json. Rien d'autre n'est modifie.
+Fabrique par crea game\nova\Recherches\Apprentissage-piano\outils\convertir_banque.py. Aucun reseau pour jouer.
+
+Les 19 mp3 mono 32 kHz a la racine de ce dossier (A1.mp3 ... Ds6.mp3) sont l'ancienne banque, gardee telle quelle
+(meme source, meme licence) ; l'ecoute ne s'en sert plus.

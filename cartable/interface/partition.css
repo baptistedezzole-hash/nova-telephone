@@ -1,0 +1,97 @@
+/* Cartable, interface : la page Partition (rendu Verovio + lecture au piano). Même bois, même cuivre, même pastille que la feuille. */
+#partition { position: fixed; inset: 0; z-index: 55; }
+#partition .voile { position: absolute; inset: 0; background: radial-gradient(110% 100% at 50% 40%, rgb(40, 26, 15), rgb(17, 10, 5)); opacity: 0; transition: opacity 0.3s; }
+#partition.la .voile { opacity: 1; }
+#partition .scene { position: absolute; left: 0; right: 0; top: calc(66px + var(--haut)); bottom: calc(86px + var(--bas)); display: flex; justify-content: center; pointer-events: none; }
+#partition .feuille-p { position: relative; width: min(1500px, calc(100vw - 24px)); height: 100%; overflow: hidden auto; border-radius: 4px; pointer-events: auto; touch-action: pan-y pinch-zoom;
+  background: #fbf8f0; box-shadow: 0 1px 2px rgba(20, 10, 4, 0.6), 0 14px 40px rgba(10, 5, 2, 0.55), 0 0 0 1px rgba(70, 50, 30, 0.25);
+  transform: translateY(26px) scale(0.965); opacity: 0; transition: transform 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.15), opacity 0.25s; scrollbar-width: thin; scrollbar-color: rgba(120, 85, 50, 0.5) transparent; }
+#partition.la .feuille-p { transform: none; opacity: 1; }
+#partition .feuille-p::after { content: ""; position: sticky; display: block; bottom: 0; height: 0; }
+#partition .rendu { position: relative; padding: 6px 8px 40px; user-select: none; color: #1d130c; min-height: 100%; }
+#partition .rendu svg { display: block; width: 100%; height: auto; overflow: visible; cursor: pointer; fill: currentColor; stroke: none; stroke-width: 0; pointer-events: auto; }
+#partition .rendu svg * { pointer-events: auto; }
+#partition .rendu svg g.note, #partition .rendu svg g.rest { transition: none; }
+#partition .rendu svg g.joue, #partition .rendu svg g.joue * { fill: #d9480f !important; stroke: #d9480f !important; color: #d9480f; }
+#partition .rendu svg g.note:hover *, #partition .rendu svg g.rest:hover * { fill: #8d2f37; stroke: #8d2f37; }
+#partition .rendu svg g.joue:hover * { fill: #d9480f; stroke: #d9480f; }
+#partition .curseur { position: absolute; left: 0; top: 0; width: 3px; margin-left: -1px; border-radius: 2px; pointer-events: none; will-change: transform;
+  background: linear-gradient(rgba(240, 182, 90, 0.0), rgba(240, 150, 60, 0.85) 12%, rgba(240, 150, 60, 0.85) 88%, rgba(240, 182, 90, 0)); box-shadow: 0 0 14px 2px rgba(240, 160, 70, 0.55); transition: transform 0.07s linear; }
+#partition .original { padding: 10px; display: grid; place-items: start center; }
+#partition .original img { display: block; max-width: 100%; height: auto; border-radius: 2px; box-shadow: 0 2px 10px rgba(20, 10, 4, 0.35); }
+#partition .attente { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; min-height: 40vh; color: #6b4a2a; font: 500 16px "Segoe UI", system-ui, sans-serif; text-align: center; padding: 24px; }
+#partition .attente i { width: 38px; height: 38px; border-radius: 50%; border: 3px solid rgba(180, 120, 60, 0.25); border-top-color: #d98a2b; animation: tourne 0.9s linear infinite; }
+#partition .attente.erreur { color: #8d2f37; } #partition .attente.erreur i { display: none; }
+@keyframes tourne { to { transform: rotate(360deg); } }
+
+/* la pastille Original / Partition : celle de la feuille (classe .bascule), posée en haut au milieu */
+#partition .bascule { left: 50%; top: calc(9px + var(--haut)); transform: translate(-50%, -70px); opacity: 0; transition: transform 0.34s cubic-bezier(0.2, 0.9, 0.3, 1.2), opacity 0.2s; }
+#partition.la .bascule { transform: translate(-50%, 0); opacity: 1; }
+#partition .bascule button { min-width: 126px; }
+
+#partition .haut { position: absolute; left: 14px; top: calc(11px + var(--haut)); max-width: calc(50vw - 120px); display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
+#partition .haut .titre { font: 600 17px "Segoe UI", system-ui, sans-serif; color: #f3e6d0; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#partition .sceau { align-self: flex-start; font: 600 12px "Segoe UI", system-ui, sans-serif; padding: 3px 10px; border-radius: 12px; background: rgba(30, 18, 9, 0.85); border: 1px solid var(--trait); color: #cdbb9c; }
+#partition .sceau.bon { color: #9be0b3; border-color: rgba(111, 207, 138, 0.5); }
+#partition .sceau.att { color: #ffd995; border-color: rgba(240, 182, 90, 0.6); }
+
+#partition .fermer { position: absolute; right: 12px; top: calc(12px + var(--haut)); width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--panneau); border: 1px solid var(--trait); color: var(--clair); opacity: 0; transition: opacity 0.2s, transform 0.12s; }
+#partition.la .fermer { opacity: 1; } #partition .fermer:active { transform: scale(0.9); }
+#partition .actions { position: absolute; right: 66px; top: calc(12px + var(--haut)); display: flex; gap: 6px; opacity: 0; transition: opacity 0.2s; }
+#partition.la .actions { opacity: 1; }
+#partition .actions button { height: 46px; padding: 0 13px; border-radius: 23px; display: flex; align-items: center; gap: 7px; background: var(--panneau); border: 1px solid var(--trait); color: #e6d6b8;
+  font: 600 13.5px "Segoe UI", system-ui, sans-serif; transition: transform 0.12s, color 0.15s, border-color 0.15s; }
+#partition .actions button svg { width: 18px; height: 18px; }
+#partition .actions button:hover { color: #fff3dc; border-color: rgba(240, 182, 90, 0.55); } #partition .actions button:active { transform: scale(0.94); }
+
+/* la barre de lecture, en bas */
+#partition .transport { position: absolute; left: 50%; bottom: calc(14px + var(--bas)); transform: translate(-50%, 90px); opacity: 0; display: flex; align-items: center; gap: 10px; padding: 8px 14px 8px 8px; border-radius: 34px;
+  background: rgba(30, 18, 9, 0.94); border: 1.5px solid rgba(240, 182, 90, 0.55); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55); max-width: calc(100vw - 16px);
+  transition: transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.2), opacity 0.25s; }
+#partition.la .transport { transform: translate(-50%, 0); opacity: 1; }
+#partition .transport button { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; color: #e6d6b8; flex: none; transition: transform 0.12s, background 0.15s; }
+#partition .transport button:hover { background: rgba(255, 240, 215, 0.08); } #partition .transport button:active { transform: scale(0.9); }
+#partition .transport button.gros { width: 56px; height: 56px; color: #2a1808; background: linear-gradient(#ffd995, #f0b65a); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.5); }
+#partition .transport button.gros svg { width: 26px; height: 26px; fill: currentColor; }
+#partition .transport button.gros.charge { opacity: 0.7; animation: pulse 0.9s ease-in-out infinite; }
+@keyframes pulse { 50% { transform: scale(0.93); } }
+#partition .transport .bloc { display: flex; align-items: center; gap: 2px; padding: 0 4px; border-left: 1px solid var(--trait); }
+#partition .transport .tempo button { width: 38px; height: 38px; } #partition .transport .tempo svg { width: 18px; height: 18px; }
+#partition .transport .val { min-width: 86px; text-align: center; font: 700 15px "Segoe UI", system-ui, sans-serif; color: #f3e6d0; }
+#partition .transport .zoom button { width: 38px; height: 38px; } #partition .transport .zoom b { font: 700 14px Georgia, serif; } #partition .transport .zoom b.g { font-size: 20px; }
+#partition .transport .chip { width: auto; height: 36px; padding: 0 12px; border-radius: 18px; font: 600 13px "Segoe UI", system-ui, sans-serif; color: #cdbb9c; border: 1px solid transparent; white-space: nowrap; }
+#partition .transport .chip.actif { color: #2a1808; background: #f0b65a; }
+#partition .transport .pos { font: 500 12.5px "Segoe UI", system-ui, sans-serif; color: #b9a583; min-width: 96px; }
+#partition.vue-original .transport .tempo, #partition.vue-original .transport .mains, #partition.vue-original .transport .zoom, #partition.vue-original .transport [data-t="lire"], #partition.vue-original .transport [data-t="debut"], #partition.vue-original .transport .pos { display: none; }
+#partition.vue-original .transport::before { content: "Photo d'origine, jamais modifiée"; padding: 0 16px; font: 500 13px "Segoe UI", system-ui, sans-serif; color: #cdbb9c; }
+
+/* écran étroit (téléphone) */
+@media (max-width: 760px) {
+  #partition .scene { top: calc(60px + var(--haut)); bottom: calc(142px + var(--bas)); }
+  #partition .feuille-p { width: calc(100vw - 10px); }
+  #partition .bascule { top: calc(6px + var(--haut)); height: 46px; } #partition .bascule button { min-width: 0; padding: 0 12px; font-size: 14px; }
+  #partition .haut { display: none; }
+  #partition .fermer { right: 6px; top: calc(7px + var(--haut)); width: 44px; height: 44px; }
+  #partition .actions { right: auto; left: 6px; top: calc(7px + var(--haut)); }
+  #partition .actions button { width: 44px; height: 44px; padding: 0; justify-content: center; } #partition .actions button span { display: none; }
+  #partition .actions button[data-a="musicxml"], #partition .actions button[data-a="midi"] { display: none; }
+  #partition .transport { flex-wrap: wrap; justify-content: center; border-radius: 26px; padding: 8px; gap: 6px; width: calc(100vw - 12px); }
+  #partition .transport .bloc { border-left: 0; } #partition .transport .pos { min-width: 0; font-size: 11.5px; flex-basis: 100%; text-align: center; order: 9; }
+  #partition .transport .val { min-width: 74px; font-size: 14px; }
+  #partition .transport .mains { order: 5; flex-basis: 100%; justify-content: center; }
+}
+
+/* sections : une étiquette cliquable au-dessus de chaque exemple ; il joue seul */
+#partition .rendu svg g.measure.en-section { fill: #b8501a; color: #b8501a; }
+#partition .tab-section { position: absolute; left: 0; top: 0; z-index: 2; display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px 0 5px; border-radius: 14px; cursor: pointer;
+  background: rgba(240, 182, 90, 0.22); border: 1.5px solid rgba(190, 120, 40, 0.55); color: #6a3d0d; font: 600 12.5px "Segoe UI", system-ui, sans-serif; white-space: nowrap;
+  transition: background 0.15s, transform 0.12s, box-shadow 0.15s; }
+#partition .tab-section i { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: #f0b65a; color: #2a1808; flex: none; }
+#partition .tab-section i svg { width: 12px; height: 12px; fill: currentColor; stroke: none; }
+#partition .tab-section:hover { background: rgba(240, 182, 90, 0.45); box-shadow: 0 3px 10px rgba(120, 70, 10, 0.25); }
+#partition .tab-section:active { transform: scale(0.95); }
+#partition .tab-section.actif { background: #f0b65a; border-color: #b8501a; color: #2a1808; box-shadow: 0 0 0 3px rgba(240, 150, 60, 0.35); }
+#partition.exercices .transport [data-t="debut"], #partition.exercices:not(.joue-tout) .transport [data-t="lire"] { display: none; }
+#partition.exercices .transport::before { content: "Touche un exemple pour l'écouter"; padding: 0 12px 0 14px; font: 500 13px "Segoe UI", system-ui, sans-serif; color: #cdbb9c; }
+#partition.exercices.joue-tout .transport::before { content: none; }
