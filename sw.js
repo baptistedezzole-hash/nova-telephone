@@ -4,15 +4,23 @@
 //  - ne touche JAMAIS une autre adresse (le PC, la boîte aux lettres, les images) : appli.js s'en occupe.
 // Publié par outils/telephone_pages.py sous le nom « sw.js » (portée = le dossier de l'appli).
 const VERSION = "nova-pages-1";
-const REVISION = "2026-11-17-etoile-pc";   // changer cette ligne = les téléphones reprennent la coquille (le cache garde son nom)
+const REVISION = "2026-11-25-cartable";   // changer cette ligne = les téléphones reprennent la coquille (le cache garde son nom)
 const RACINE = new URL("./", self.location.href).pathname;
 const COQUILLE = ["", "index.html", "appli.js", "reveil.html", "video.js", "bureau.js", "montrer.js", "manifest.webmanifest",
-  "icone-180.png", "icone-192.png", "icone-512.png", "icone-masquable-192.png", "icone-masquable-512.png"].map(f => RACINE + f);
+  "icone-180.png", "icone-192.png", "icone-512.png", "icone-masquable-192.png", "icone-masquable-512.png",
+  "cartable-tel.js"].map(f => RACINE + f);
+// 25/11 : le Cartable (cartable/…) est gardé en entier pour s'ouvrir hors ligne ; sa liste est dans cartable/liste.json.
+const CARTABLE = RACINE + "cartable/";
+
+function garder(c, u) {
+  return fetch(u, { cache: "no-cache" }).then(r => { if (r.ok) { c.put(u, r.clone()); return c.put("~secours" + u, r); } }).catch(() => null);
+}
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(VERSION)
-    .then(c => Promise.all(COQUILLE.map(u => fetch(u, { cache: "no-cache" })
-      .then(r => { if (r.ok) { c.put(u, r.clone()); return c.put("~secours" + u, r); } }).catch(() => null))))
+    .then(c => Promise.all(COQUILLE.map(u => garder(c, u)).concat([
+      fetch(CARTABLE + "liste.json", { cache: "no-cache" }).then(r => r.ok ? r.json() : [])
+        .then(l => Promise.all((Array.isArray(l) ? l : []).map(f => garder(c, CARTABLE + f)))).catch(() => null)])))
     .then(() => self.skipWaiting()));
 });
 
@@ -60,7 +68,9 @@ self.addEventListener("fetch", e => {
   if (r.mode === "navigate") {
     const p = u.pathname === RACINE || u.pathname === RACINE + "index.html" ? RACINE : u.pathname;
     if (p === RACINE || p === RACINE + "reveil.html") e.respondWith(servir(e, p));
+    else if (p.startsWith(CARTABLE + "interface/")) e.respondWith(servir(e, p.endsWith("/") ? p + "index.html" : p));
     return;
   }
-  if (COQUILLE.includes(u.pathname) || /\/demarrage-\d+x\d+\.png$/.test(u.pathname)) e.respondWith(servir(e, u.pathname));
+  if (COQUILLE.includes(u.pathname) || /\/demarrage-\d+x\d+\.png$/.test(u.pathname) || u.pathname.startsWith(CARTABLE))
+    e.respondWith(servir(e, u.pathname));
 });
