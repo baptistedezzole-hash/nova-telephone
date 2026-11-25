@@ -508,6 +508,16 @@
         return api.creerFeuille({ papier: "photo", titre: opts.titre || "Photo", dans: opts.dans, pos: opts.pos, index: opts.index,
                                   image: { sha, l, h, mime }, format: opts.format || { l: 210, h: Math.round(210 * h / l) } });
       },
+      // un fichier quelconque gardé comme une image (même stockage local, même synchro) : le MusicXML d'une partition lue (agent E)
+      async ajouterBlob(octets, mime) {
+        const o = await enOctets(octets);
+        if (!o.length || o.length > MAX_IMAGE) throw new Error("fichier vide ou trop gros (20 Mo maximum)");
+        const sha = await sha256(o);
+        await stockage.blobPoser(sha, o, mime || "image/vnd.cartable.partition");
+        const blobsAEnvoyer = (await stockage.meta("blobsAEnvoyer")) || [];
+        if (!blobsAEnvoyer.includes(sha)) { blobsAEnvoyer.push(sha); await stockage.metaPoser("blobsAEnvoyer", blobsAEnvoyer); }
+        return sha;
+      },
       async image(sha) {                                    // -> { octets: Uint8Array, mime } ou null (pas encore arrivée)
         const b = await stockage.blob(sha);
         if (b || !synchro) return b;
@@ -803,6 +813,18 @@
   const auditeursNova = new Set();
   function surNova(f) { auditeursNova.add(f); return () => auditeursNova.delete(f); }
   // la mise au propre d'une photo donnée par Nova : la transcription (éléments à dessiner, vérifiés) ou, sans elle, le scan net
+  // la partition lue automatiquement : { sha (blob du MusicXML), mesures, notes, confiance 0..1, verif { etat, corrections, fautes }, titre } -> champ `propre.partition`
+  function partitionInfo(sha, i) {
+    i = i && typeof i === "object" ? i : {};
+    const nb = (v, max) => (typeof v === "number" && isFinite(v) && v >= 0 && v <= max ? Math.round(v * 1000) / 1000 : undefined);
+    const tx = (v, n) => (typeof v === "string" ? v.replace(/[\x00-\x1f]/g, " ").slice(0, n) : undefined);
+    const v = i.verif && typeof i.verif === "object" ? i.verif : {};
+    const r = { sha, mime: "image/vnd.cartable.partition", mesures: nb(i.mesures, 5000), notes: nb(i.notes, 100000), confiance: nb(i.confiance, 1), moteur: tx(i.moteur, 40), titre: tx(i.titre, 120), lu: Date.now(),
+      verif: { etat: ["verifie", "attente", "sautee"].includes(v.etat) ? v.etat : undefined, corrections: nb(v.corrections, 5000) } };
+    for (const k of Object.keys(r)) if (r[k] === undefined) delete r[k];
+    for (const k of Object.keys(r.verif)) if (r.verif[k] === undefined) delete r.verif[k];
+    return r;
+  }
   function propreDeNova(cmd) {
     const t = cmd.transcription;
     if (t && typeof t === "object" && Array.isArray(t.elements)) {
@@ -865,9 +887,26 @@
             if (!k) r.classeurCree = true;
           }
           r.id = await c.ajouterImage(cmd.octets, { mime: cmd.mime, l: cmd.l, h: cmd.h, titre: cmd.titre || "Photo", dans, pos: dans ? undefined : placeLibre() });
+          if (cmd.partitionOctets && cmd.partitionOctets.length) {              // partition lue par la chaîne automatique : MusicXML gardé comme blob
+            const sha = await c.ajouterBlob(cmd.partitionOctets, "image/vnd.cartable.partition");
+            c.mettreAuPropre(r.id, { v: 2, n: 0, scan: true, partition: partitionInfo(sha, Object.assign({ titre: cmd.titre }, cmd.partitionInfo)) }, typeof cmd.texte === "string" ? cmd.texte : undefined);
+            c.modifier(r.id, { ext_voirPropre: true });
+            r.dit = "Partition « " + (cmd.titre || "Partition") + " » lue" + (cmd.dans ? ", rangée dans « " + cmd.dans + " »" : "") + ", lisible et écoutable dans le Cartable.";
+            break;
+          }
           const pr = propreDeNova(cmd);
           if (pr) { c.mettreAuPropre(r.id, pr, typeof cmd.texte === "string" ? cmd.texte : undefined); c.modifier(r.id, { ext_voirPropre: true }); }
           r.dit = "« " + (cmd.titre || "Photo") + " » ajoutée" + (cmd.dans ? " dans « " + cmd.dans + " »" + (r.classeurCree ? " (classeur créé)" : "") : "") + (pr ? ", mise au propre, original gardé." : ".");
+          break;
+        }
+        case "partition-maj": {                               // la vérification a corrigé le MusicXML : on remplace le blob (l'original et la photo ne bougent pas)
+          const o = trouverOuErreur(cmd.quoi, "feuille"); r.id = o.id;
+          if (!o.propre || !o.propre.partition) throw new Error("cette feuille n'est pas une partition lue");
+          if (!cmd.partitionOctets || !cmd.partitionOctets.length) throw new Error("MusicXML manquant");
+          const sha = await c.ajouterBlob(cmd.partitionOctets, "image/vnd.cartable.partition");
+          const ancien = o.propre.partition;
+          c.mettreAuPropre(o.id, Object.assign({}, o.propre, { partition: partitionInfo(sha, Object.assign({}, ancien, { titre: ancien.titre }, cmd.partitionInfo)) }));
+          r.dit = "Partition « " + (o.titre || "") + " » mise à jour.";
           break;
         }
         case "propre": {                                      // « mets au propre … » / « remets l'original de … » (l'original n'est jamais effacé)

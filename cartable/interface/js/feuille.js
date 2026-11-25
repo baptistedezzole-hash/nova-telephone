@@ -110,6 +110,7 @@
   // rectDe() rend { x, y, l, r } : centre, largeur et angle de la feuille à l'écran ; options : { avantRetour(page) -> promesse, fini(page, change) }
   F.ouvrir = function (page, rectDe, options) {
     if (ouvert) return false;
+    if (C.partition && C.partition.estPartition(page)) return C.partition.ouvrir(page, rectDe, options);   // photo de partition lue : page Partition (js/partition.js)
     o = page; ouvert = true; anime = true; rect = rectDe; opt = options || {}; change = false;
     if (!o.traits) o.traits = [];
     pile = []; refaits = []; trait = null; pince = null; ptrs.clear();
