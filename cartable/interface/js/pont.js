@@ -187,10 +187,10 @@
       el.querySelector(".fichier").onclick = async () => { const s = await choisirFichier(); if (s) finir(s); };
     });
   }
-  function choisirFichier() {
+  function choisirFichier(galerie) {                       // galerie : une image déjà rangée (pas l'appareil photo du téléphone)
     return new Promise((ok) => {
       const i = document.createElement("input");
-      i.type = "file"; i.accept = "image/*"; i.setAttribute("capture", "environment");
+      i.type = "file"; i.accept = "image/*"; if (!galerie) i.setAttribute("capture", "environment");
       i.onchange = () => {
         const f = i.files && i.files[0];
         if (!f || !/^image\//.test(f.type) || f.size > 40 * 1024 * 1024) return ok(null);
@@ -203,6 +203,39 @@
       i.click();
     });
   }
+
+  // ---- la couverture d'un classeur (25/11) ----
+  // Les propositions sont rangées sur le PC (Documents\Nova\Cartable\couvertures\<classeur>) : l'appli les donne en vignettes.
+  // La page ne voit jamais de chemin : un nom de la liste, ou une image choisie ici (réduite avant d'être gardée).
+  function reduireImage(src, haut) {
+    const sl = src.naturalWidth || src.width, sh = src.naturalHeight || src.height;
+    if (!sl || !sh) return Promise.resolve(null);
+    const k = Math.min(1, haut / sh), l = Math.max(1, Math.round(sl * k)), h = Math.max(1, Math.round(sh * k));
+    const c = U.toile(l, h); c.getContext("2d").drawImage(src, 0, 0, l, h);
+    return new Promise((ok) => c.toBlob((b) => (b ? b.arrayBuffer().then((a) => ok({ octets: new Uint8Array(a), mime: "image/jpeg", l, h, url: P.bouchon ? c.toDataURL("image/jpeg", 0.85) : "" })) : ok(null)), "image/jpeg", 0.9));
+  }
+  P.choisirImage = () => choisirFichier(true);
+  P.couverturesEssai = null;                               // banc d'essai : [{ nom, url }]
+  // -> [{ nom, url, jetable }] : les propositions pour ce classeur (liste vide hors de l'appli du PC)
+  P.couvertures = async function (nom) {
+    if (ESSAI) return P.couverturesEssai || [];
+    const h = window.cartableHote;
+    if (!h || !h.couverturesListe) return [];
+    try { return ((await h.couverturesListe(nom)) || []).map((x) => ({ nom: x.nom, jetable: true, url: URL.createObjectURL(new Blob([x.octets], { type: x.mime || "image/jpeg" })) })); }
+    catch (e) { console.error(e); return []; }
+  };
+  // choix : null (couverture d'origine), { nom } (une proposition) ou { image } (une image choisie ici) -> l'adresse affichée
+  P.couverture = async function (classeur, choix) {
+    const h = window.cartableHote;
+    let img = null;
+    if (choix && choix.image) img = await reduireImage(choix.image, 1400);
+    else if (choix && choix.nom && h && h.couvertureLire && !ESSAI) img = await h.couvertureLire(classeur.nom, choix.nom);
+    else if (choix && choix.url && P.bouchon) img = { url: choix.url };
+    if (choix && !img) throw new Error("image illisible");
+    if (vrai.couverture) classeur.couv = await vrai.couverture(classeur.id, img);
+    else { classeur.couv = img ? img.url : ""; P.sauver(classeur); }
+    return classeur.couv;
+  };
 
   // ---- le cadrage à la main : 4 coins à tirer sur la photo ; rend les coins (en pixels de l'image) ou null ----
   P.cadrage = function (source, coins, iw, ih, options) {

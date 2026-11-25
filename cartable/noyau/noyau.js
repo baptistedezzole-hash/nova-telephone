@@ -850,6 +850,23 @@
       }
       return { x: 1200 + pris.length * 40 % 800, y: 660, a: 0 };
     };
+    // une page rangée, désignée à la voix : « la page 3 du classeur Solfège », « la dernière page de Solfège » (pages sans titre comprises)
+    const trouverPage = (mots) => {
+      const m = plat(mots), NOM = "(?:(?:du|de|dans|d) )?(?:le |la |mon |ma )?(?:classeur |cahier )?(?:de |d |du )?(.+)";
+      const RANGS = { premiere: 1, deuxieme: 2, seconde: 2, troisieme: 3, quatrieme: 4, cinquieme: 5, derniere: -1, "avant derniere": -2 };
+      let rang = 0, nom = "";
+      let x = m.match(new RegExp("^(?:la |ma |cette )?(?:page|feuille) (?:numero |n )?([0-9]{1,4}) " + NOM + "$"));
+      if (x) { rang = Number(x[1]); nom = x[2]; }
+      else if ((x = m.match(new RegExp("^(?:la |ma |l )?(avant derniere|premiere|deuxieme|seconde|troisieme|quatrieme|cinquieme|derniere) (?:page|feuille|photo|partition) " + NOM + "$")))) { rang = RANGS[x[1]]; nom = x[2]; }
+      if (!rang || !nom) return null;
+      const k = c.trouver(nom, { type: "classeur" }) || c.trouver(nom, { type: "cahier" });
+      if (!k) return null;                                    // pas un classeur : c'est peut-être le titre d'une page
+      const pages = c.enfants(k.id).filter((o) => o.type === "feuille");
+      const o = pages[rang > 0 ? rang - 1 : pages.length + rang];
+      if (!o) throw new Error(pages.length ? "« " + (k.titre || k.type) + " » n'a que " + pages.length + " page" + (pages.length > 1 ? "s" : "") : "« " + (k.titre || k.type) + " » est vide");
+      return o;
+    };
+    const rangee = (o) => { const p = o.place && o.place.p !== BUREAU ? c.obtenir(o.place.p) : null; return p && p.type && !p.supprime ? p : null; };
     try {
       switch (cmd && cmd.action) {
         case "creer-classeur": r.id = c.creerClasseur({ titre: cmd.titre, pos: placeLibre() }); r.dit = "Classeur « " + cmd.titre + " » créé."; break;
@@ -870,7 +887,32 @@
         }
         case "ouvrir": { const o = trouverOuErreur(cmd.quoi); r.id = o.id; r.dit = "J'ouvre « " + (o.titre || o.type) + " »."; break; }
         case "renommer": { const o = trouverOuErreur(cmd.quoi); c.renommer(o.id, cmd.titre); r.id = o.id; r.dit = "Renommé."; break; }
-        case "jeter": { const o = trouverOuErreur(cmd.quoi); c.jeter(o.id); r.id = o.id; r.dit = "Mis à la corbeille."; break; }
+        case "jeter": {                                       // un objet du bureau, ou une page rangée dans un classeur (elle seule part)
+          const o = trouverPage(cmd.quoi) || trouverOuErreur(cmd.quoi), k = rangee(o);
+          c.jeter(o.id); r.id = o.id;
+          if (k) { r.de = k.id; r.dit = "Page de « " + (k.titre || k.type) + " » mise à la corbeille."; } else r.dit = "Mis à la corbeille.";
+          break;
+        }
+        case "sortir": {                                      // « enlève la page X du classeur » : elle se pose sur le bureau, rien n'est jeté
+          const o = trouverPage(cmd.quoi) || trouverOuErreur(cmd.quoi, "feuille"), k = rangee(o);
+          r.id = o.id;
+          if (!k) { r.dit = "« " + (o.titre || "Cette page") + " » est déjà sur le bureau."; break; }
+          c.sortir(o.id, placeLibre());
+          r.de = k.id; r.dit = "Page sortie de « " + (k.titre || k.type) + " » et posée sur le bureau."; break;
+        }
+        case "couverture": {                                  // image de couverture d'un classeur (l'hôte a lu et vérifié l'image) ; origine = on la retire
+          const o = c.trouver(cmd.quoi, { type: "classeur" }) || c.trouver(cmd.quoi, { type: "cahier" });
+          if (!o) throw new Error("je ne trouve pas le classeur « " + cmd.quoi + " »");
+          const nom = o.titre || "le classeur";
+          if (cmd.origine) { c.modifier(o.id, { ext_couv: null }); r.dit = "Couverture d'origine remise sur « " + nom + " »."; }
+          else {
+            if (!cmd.octets || !cmd.octets.length) throw new Error("image manquante");
+            const sha = await c.ajouterBlob(cmd.octets, cmd.mime || "image/png");
+            c.modifier(o.id, { ext_couv: { sha, mime: cmd.mime || "image/png", l: cmd.l || 0, h: cmd.h || 0 } });
+            r.dit = "Nouvelle couverture posée sur « " + nom + " ».";
+          }
+          r.id = o.id; break;
+        }
         case "resume": r.resume = c.resume(); break;
         case "envoyer-telephone": case "exporter":   // l'interface rend la page courante en image (voir API.md)
           if (!auditeursNova.size) { r.ok = false; r.erreur = "rien à envoyer : l'interface n'est pas ouverte"; }

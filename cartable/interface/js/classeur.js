@@ -210,6 +210,7 @@
     mesurer(); vols = [];
     s = U.borne(k.s || 0, 0, maxS());
     titre.value = k.nom; couvNom.textContent = k.nom; el.style.setProperty("--couleur", k.couleur);
+    couvExt.style.backgroundImage = k.couv ? `url("${k.couv}")` : ""; couvExt.classList.toggle("image", !!k.couv);   // couverture choisie (sinon le cuir d'origine)
     majStatiques(); precharger();
     const a = B.rectEcran(v);
     B.cacher(v, true);

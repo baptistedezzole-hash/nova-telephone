@@ -63,7 +63,8 @@
         const anciennes = new Map((x.pages || []).map((p) => [p.id, p]));
         for (const e of c.enfants(o.id)) if (e.type === "feuille") pages.push(await versUI(e, 0, anciennes.get(uId(e.id))));
         (x.pages || []).forEach((p, i) => { if (enCreation.has(p.id) && !pages.includes(p)) pages.splice(Math.min(i, pages.length), 0, p); });
-        return Object.assign(x, base, { type: "classeur", nom: o.titre || "", couleur: o.couleur || "#2f5d8a", pages, sorte: o.type });
+        // couv : l'image de couverture choisie (adresse blob:), "" = couverture d'origine en cuir
+        return Object.assign(x, base, { type: "classeur", nom: o.titre || "", couleur: o.couleur || "#2f5d8a", pages, sorte: o.type, couv: await urlDe(o.ext_couv) });
       }
       const traits = traitsUI(o.id);
       const memeEncre = x.traits && x.traits.length === traits.length && x.traits.every((t, i) => t.id === traits[i].id);
@@ -272,6 +273,26 @@
       sauver(d, quoi) { if (d && d !== donnees) donnees = d; planifier(); },
       surChangement(f) { auditeurs.add(f); return () => auditeurs.delete(f); },
       etat() { const s = c.synchro(); return { enLigne: s.etat === "a-jour", etat: s.etat, texte: textes[s.etat] || s.etat, derniere: s.derniere }; },
+      // couverture d'un classeur : img = { octets, mime, l, h } ou null (couverture d'origine) -> l'adresse à afficher ("" = d'origine).
+      // L'image part dans les blobs du noyau : elle suit la synchro vers les autres appareils, comme une photo.
+      async couverture(uid, img) {
+        if (aSauver) sauverMaintenant();                    // un classeur tout neuf est d'abord enregistré
+        const id = nId(uid), o = id && c.obtenir(id);
+        if (!o || (o.type !== "classeur" && o.type !== "cahier")) throw new Error("classeur inconnu");
+        const u = donnees && donnees.objets.find((x) => x.id === uid);
+        let champ = null, url = "";
+        if (img) {
+          if (!img.octets || !img.octets.length) throw new Error("image manquante");
+          const mime = /^image\/(jpeg|png|webp)$/.test(img.mime) ? img.mime : "image/jpeg";
+          const sha = await c.ajouterBlob(img.octets, mime);
+          champ = { sha, mime, l: Math.round(img.l) || 0, h: Math.round(img.h) || 0 };
+          url = await urlDe(champ);
+        }
+        jeFais = true;                                      // l'interface l'affiche elle-même : pas de reconstruction du bureau
+        try { c.modifier(id, { ext_couv: champ }); } finally { jeFais = false; }
+        if (u) u.couv = url;
+        return url;
+      },
       // tests et outils
       vider() { sauverMaintenant(); return c.attendreEcritures(); },
       async reconstruit() { await new Promise((r) => setTimeout(r, 40)); await reconstruction; await Promise.all([...enCreation.values()]); await reconstruction; return donnees; },
