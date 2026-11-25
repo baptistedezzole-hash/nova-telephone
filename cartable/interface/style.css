@@ -94,9 +94,11 @@ body.porte #corbeille { transform: translate(-50%, 0); opacity: 1; }
 /* ---------------- écrire ---------------- */
 #ecriture { position: fixed; inset: 0; z-index: 50; }
 #ecriture .voile { position: absolute; inset: 0; background: radial-gradient(110% 100% at 50% 40%, rgba(46, 30, 18, 0.78), rgba(18, 10, 5, 0.92)); opacity: 0; }
-#ecriture .support { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; background: #fbf8f0; border-radius: 2px; touch-action: none; cursor: crosshair;
+#ecriture .support { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; background: #fbf8f0; touch-action: none; cursor: crosshair;
   box-shadow: 0 2px 3px rgba(0, 0, 0, 0.35), 0 18px 50px rgba(0, 0, 0, 0.5); overflow: hidden; }
 #ecriture .support canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+/* la toile nette : seulement la partie visible, à la taille exacte de l'écran (posée et mesurée par feuille.js) */
+#ecriture .support canvas.net { width: auto; height: auto; display: none; }
 #ecriture .eclat { position: absolute; left: 0; top: 0; width: 90px; height: 100%; margin-left: -90px; opacity: 0; pointer-events: none;
   background: linear-gradient(90deg, rgba(255, 236, 180, 0), rgba(255, 240, 200, 0.75) 70%, #fff 96%, rgba(255, 255, 255, 0)); mix-blend-mode: screen; }
 #ecriture .outils { position: absolute; left: 12px; top: 50%; width: 62px; max-height: calc(100vh - 20px); overflow: hidden auto; scrollbar-width: none;
@@ -126,6 +128,30 @@ body.porte #corbeille { transform: translate(-50%, 0); opacity: 1; }
   background: var(--panneau); border: 1px solid var(--trait); color: var(--clair); opacity: 0; transition: opacity 0.2s, transform 0.12s; }
 #ecriture.la .fermer { opacity: 1; }
 #ecriture .fermer:active { transform: scale(0.9); }
+/* la pastille « Original / Au propre » d'une photo : sur la feuille ouverte et sous chaque page photo du classeur */
+.bascule { position: absolute; z-index: 3; display: grid; grid-template-columns: 1fr 1fr; align-items: stretch; height: 48px; padding: 4px; border-radius: 26px;
+  background: rgba(30, 18, 9, 0.94); border: 1.5px solid rgba(240, 182, 90, 0.75); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5), 0 0 0 4px rgba(240, 182, 90, 0.10);
+  touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.bascule .glisse { position: absolute; left: 4px; top: 4px; bottom: 4px; width: calc(50% - 4px); border-radius: 22px; pointer-events: none;
+  background: linear-gradient(#ffd995, #f0b65a); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.5); transition: transform 0.28s cubic-bezier(0.3, 1.3, 0.5, 1); }
+.bascule.propre .glisse { transform: translateX(100%); }
+.bascule button { position: relative; display: flex; align-items: center; justify-content: center; gap: 7px; min-width: 112px; padding: 0 14px; border-radius: 22px; white-space: nowrap;
+  font: 600 15px "Segoe UI", system-ui, sans-serif; color: #e6d6b8; cursor: pointer; transition: color 0.2s; }
+.bascule button svg { width: 19px; height: 19px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.bascule button[aria-pressed="true"] { color: #2a1808; }
+.bascule button[aria-pressed="false"]:hover { color: #fff3dc; }
+.bascule button:active span, .bascule button:active svg { transform: scale(0.94); }
+.bascule kbd { position: absolute; left: 100%; top: 50%; margin-left: 10px; transform: translateY(-50%); min-width: 24px; height: 24px; padding: 0 6px; border-radius: 6px; display: grid; place-items: center;
+  font: 600 12px "Segoe UI", system-ui, sans-serif; color: #cdbb9c; background: rgba(30, 18, 9, 0.85); border: 1px solid var(--trait); pointer-events: none; }
+@media (hover: none), (max-width: 700px) { .bascule kbd { display: none; } }
+#ecriture .bascule { left: 50%; top: calc(9px + var(--haut)); transform: translate(-50%, -70px); opacity: 0; transition: transform 0.34s cubic-bezier(0.2, 0.9, 0.3, 1.2), opacity 0.2s; }
+#ecriture.la .bascule { transform: translate(-50%, 0); opacity: 1; }
+#ecriture.portrait .bascule { top: calc(6px + var(--haut)); height: 46px; }
+#ecriture.portrait .bascule button { min-width: 0; padding: 0 12px; font-size: 14px; }
+#classeur .bascule { height: 46px; transform: translate(-50%, -50%); opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+#classeur.la .bascule { opacity: 1; pointer-events: auto; }
+#classeur .bascule button { min-width: 0; padding: 0 12px; font-size: 13.5px; gap: 6px; }
+#classeur .bascule button svg { width: 17px; height: 17px; }
 /* portrait (téléphone) : les outils en bas */
 #ecriture.portrait .outils { left: 50%; top: auto; bottom: calc(10px + var(--bas)); width: auto; max-width: calc(100vw - 12px); max-height: none; flex-direction: row; padding: 0 9px; height: 64px;
   overflow: auto hidden; justify-content: flex-start; transform: translate(-50%, 100px); touch-action: pan-x; }

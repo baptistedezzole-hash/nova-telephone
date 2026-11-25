@@ -144,6 +144,7 @@
       else if (k === "+" || k === "=") K.ajouter();
       else if (k === "Home") K.aller(0);
       else if (k === "End") K.aller(9999);
+      else if (!m && l === "p") { if (!K.basculerPropre()) return; }
       else return;
       return e.preventDefault();
     }

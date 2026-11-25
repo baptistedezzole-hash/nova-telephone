@@ -66,7 +66,59 @@
     else if (!double) compte.textContent = (s + 1) + " / " + n;
     else { const a = 2 * s, b = Math.min(n, 2 * s + 1); compte.textContent = (a < 1 ? "1" : b > a ? a + " – " + b : String(a)) + " / " + n; }
     q('[data-action="avant"]').disabled = s <= 0; q('[data-action="apres"]').disabled = s >= maxS();
+    majBascules();
   }
+
+  // ---------- une photo dans le classeur : « Original / Au propre » sous la page, sans l'ouvrir ----------
+  const ICONES = { original: "M4 7h3l1.5-2h7L17 7h3v12H4zM12 16.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z", propre: "M5 19L16 8M14 6l4 4M18 3v3M16.5 4.5h3M7 4v2M6 5h2M20 13v2M19 14h2" };
+  const basc = [0, 1].map((i) => {
+    const e = U.el("div", "bascule", el); e.hidden = true; U.el("i", "glisse", e);
+    for (const [voir, nom] of [["original", "Original"], ["propre", "Au propre"]]) {
+      const b = U.el("button", "", e); b.dataset.voir = voir; b.title = (voir === "propre" ? "Voir la feuille au propre" : "Voir la photo d'origine") + " (P)";
+      b.innerHTML = `<svg viewBox="0 0 24 24"><path d="${ICONES[voir]}"/></svg>`;
+      U.el("span", "", b).textContent = nom;
+    }
+    const x = { el: e, pg: null };
+    e.addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (b && x.pg) basculerPage(x.pg, b.dataset.voir === "propre"); });
+    return x;
+  });
+  let bascOccupe = false;
+  const pagesVues = () => (k ? [double && s > 0 ? verso(s - 1) : null, s < nF() ? recto(s) : null] : [null, null]);
+  function majBascules() {
+    const vues = pagesVues(), libre = ouvert && !anime && !vols.length && fouille.hidden;
+    basc.forEach((b, i) => {
+      const pg = libre ? vues[i] : null, photo = !!(pg && pg.image);
+      b.pg = photo ? pg : null; b.el.hidden = !photo;
+      if (!photo) return;
+      const pr = !!(pg.voirPropre && pg.propre);
+      b.el.classList.toggle("propre", pr);
+      for (const bt of b.el.querySelectorAll("button")) bt.setAttribute("aria-pressed", String((bt.dataset.voir === "propre") === pr));
+      b.el.style.left = Math.round(bx + (i ? 1.5 : 0.5) * pw) + "px"; b.el.style.top = Math.round(by + ph - 8) + "px";
+    });
+  }
+  async function basculerPage(pg, veut) {
+    if (!ouvert || anime || bascOccupe || !pg || !pg.image || !C.propre) return;
+    const est = !!(pg.voirPropre && pg.propre);
+    if (veut === undefined) veut = !est;
+    if (veut === est) return;
+    bascOccupe = true;
+    try {
+      if (veut) { if (!C.propre.estPhoto(pg.propre)) pg.propre = { v: 2, n: 0, scan: true }; await C.propre.preparer(pg); }
+      pg.voirPropre = veut; pg.v = (pg.v || 0) + 1;
+      S.jouer("magie"); P.sauver(k); majBascules();
+      await T.urlPage(pg);
+    } catch (e) { console.error(e); }
+    bascOccupe = false;
+    if (ouvert && k) majStatiques();
+  }
+  // la touche P : la page de droite d'abord ; deux photos côte à côte changent ensemble
+  K.basculerPropre = function () {
+    const v = pagesVues().filter((pg) => pg && pg.image).reverse(); if (!v.length || !fouille.hidden || vols.length) return false;
+    const veut = !(v[0].voirPropre && v[0].propre);
+    (async () => { for (const pg of v) await basculerPage(pg, veut); })();
+    return true;
+  };
+  K.bascules = () => basc.map((b) => (b.el.hidden ? null : { voit: b.el.classList.contains("propre") ? "propre" : "original", rect: b.el.getBoundingClientRect().toJSON() }));
 
   function creerFeuillet() {
     const e = U.el("div", "feuillet", livre), f = { el: e, j: 0, p: new U.Ressort(0, 140, 22), bandes: [], retard: 0, tenu: false };
@@ -168,13 +220,13 @@
       livre.style.transform = forme(a, U.douce(Math.min(1, t / 0.6)));
       poseCouv(U.douce2(U.borne((t - 0.1) / 0.9, 0, 1)));
       voile.style.opacity = Math.min(1, t * 2).toFixed(3);
-    }, () => { anime = false; livre.style.transform = ""; });
+    }, () => { anime = false; livre.style.transform = ""; majBascules(); });
     return true;
   };
   K.fermer = function () {
     if (!ouvert || anime) return;
     if (!fouille.hidden) return fermerFouille();
-    poserTout(); anime = true; k.s = s; el.classList.remove("la");
+    poserTout(); anime = true; k.s = s; el.classList.remove("la"); majBascules();
     if (document.activeElement === titre) titre.blur();
     const a = B.rectEcran(kv);
     S.jouer("classeur");
@@ -289,7 +341,7 @@
   let vigs = [], geo = null, pf = null;
   K.fouiller = function () { if (!ouvert || anime) return; if (fouille.hidden) ouvrirFouille(); else fermerFouille(); };
   K.fouilleOuverte = () => ouvert && !fouille.hidden;
-  function ouvrirFouille() { poserTout(); fouille.hidden = false; el.classList.add("fouille-la"); construire(); S.jouer("feuille"); }
+  function ouvrirFouille() { poserTout(); fouille.hidden = false; el.classList.add("fouille-la"); majBascules(); construire(); S.jouer("feuille"); }
   function fermerFouille() { fouille.hidden = true; el.classList.remove("fouille-la"); pf = null; s = U.borne(s, 0, maxS()); majStatiques(); }
   function construire() {
     grille.textContent = "";

@@ -49,7 +49,14 @@
     <canvas class="papier"></canvas>
     <canvas class="propre"></canvas>
     <canvas class="encre"></canvas>
-    <div class="eclat"></div>
+    <canvas class="net"></canvas>
+    <div class="eclat" hidden></div>
+  </div>
+  <div class="bascule" hidden role="group" aria-label="Original ou au propre">
+    <i class="glisse"></i>
+    <button data-voir="original" title="Voir la photo d'origine (P)"><svg viewBox="0 0 24 24"><path d="M4 7h3l1.5-2h7L17 7h3v12H4zM12 16.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/></svg><span>Original</span></button>
+    <button data-voir="propre" title="Voir la feuille au propre (P)"><svg viewBox="0 0 24 24"><path d="M5 19L16 8M14 6l4 4M18 3v3M16.5 4.5h3M7 4v2M6 5h2M20 13v2M19 14h2"/></svg><span>Au propre</span></button>
+    <kbd>P</kbd>
   </div>
   <div class="outils">
     <button data-outil="stylo" class="actif" title="Stylo (S)"><svg viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19zM14 7l3 3"/></svg></button>

@@ -6,7 +6,10 @@
   const el = document.getElementById("ecriture"), sup = el.querySelector(".support"), voile = el.querySelector(".voile");
   const cPap = el.querySelector("canvas.papier"), cPro = el.querySelector("canvas.propre"), cEnc = el.querySelector("canvas.encre");
   const eclat = el.querySelector(".eclat"), outils = el.querySelector(".outils");
-  const gP = cPro.getContext("2d"), gE = cEnc.getContext("2d", { desynchronized: true });
+  const cNet = el.querySelector("canvas.net"), bascule = el.querySelector(".bascule");
+  // Pas de toile « desynchronized » : sur un vrai écran, Windows peut la sortir en superposition matérielle quand la feuille
+  // est grande, et le transparent devient noir. Une toile ordinaire, composée avec le reste, ne peut pas faire ça.
+  const gP = cPro.getContext("2d"), gE = cEnc.getContext("2d"), gN = cNet.getContext("2d");
   const etat = { outil: "stylo", couleur: "#1b1b26", taille: 2.6, doigtEcrit: true, styletVu: false };
   F.etat = etat;
   let o = null, ouvert = false, anime = false, occupe = false, rect = null, opt = null, change = false;
@@ -21,7 +24,9 @@
   function mesurer() {
     const W = innerWidth, H = innerHeight, paysage = W > H;
     el.classList.toggle("portrait", !paysage);
-    zone = paysage ? { x: 86, y: 14, l: W - 86 - 70, h: H - 28 } : { x: 8, y: 60, l: W - 16, h: H - 60 - 84 };
+    const photo = !!o.image;                               // une photo : la pastille « Original / Au propre » est en haut, la feuille lui laisse la place
+    bascule.hidden = !photo;
+    zone = paysage ? (photo ? { x: 86, y: 66, l: W - 86 - 70, h: H - 80 } : { x: 86, y: 14, l: W - 86 - 70, h: H - 28 }) : { x: 8, y: 60, l: W - 16, h: H - 60 - 84 };
     ol = o.l || T.PAGE_L; oh = o.h || T.PAGE_H;
     e0 = Math.min(zone.l / ol, zone.h / oh);
     w = ol * e0; h = oh * e0;
@@ -40,7 +45,7 @@
     vue.y = U.borne(vue.y, 90 - h * vue.z, innerHeight - 90);
   }
   const forme = (cx, cy, s, r) => `translate3d(${cx.toFixed(2)}px,${cy.toFixed(2)}px,0) rotate(${r.toFixed(3)}deg) scale(${s.toFixed(5)}) translate(${(-w / 2).toFixed(2)}px,${(-h / 2).toFixed(2)}px)`;
-  function appliquer() { sup.style.transform = forme(vue.x + w * vue.z / 2, vue.y + h * vue.z / 2, vue.z, 0); }
+  function appliquer() { sup.style.transform = forme(vue.x + w * vue.z / 2, vue.y + h * vue.z / 2, vue.z, 0); planifierNet(); }
   const versPage = (sx, sy) => [(sx - vue.x) / (e0 * vue.z), (sy - vue.y) / (e0 * vue.z)];
 
   function peindreTout() {
@@ -48,11 +53,57 @@
     dessinerPropre(); redessiner();
     cPro.style.opacity = o.voirPropre && o.propre ? 1 : 0;
   }
-  function dessinerPropre() { gP.clearRect(0, 0, cPro.width, cPro.height); if (o.propre) T.dessinerPropre(gP, o.propre, k, o); }
+  function dessinerPropre() { gP.clearRect(0, 0, cPro.width, cPro.height); if (o.propre) T.dessinerPropre(gP, o.propre, k, o); if (ouvert && !anime) planifierNet(60); }
   function redessiner() {
     gE.clearRect(0, 0, cEnc.width, cEnc.height);
     T.dessinerTraits(gE, o.voirPropre && o.propre ? o.traits.slice(o.propre.n || 0) : o.traits, k);
+    if (net) peindreNet();
   }
+
+  // ---------- la toile nette ----------
+  // Les trois toiles de la feuille sont agrandies par le zoom, jamais redessinées : floues de près, et très grandes pour la
+  // carte graphique. La toile nette ne couvre que ce qu'on voit, à la taille exacte de l'écran : elle ne dépasse jamais la
+  // fenêtre, quel que soit le zoom, et elle est opaque (photo ou papier), donc jamais de trou noir.
+  let net = null, netMinuterie = 0, redimAttente = false;
+  function cacherNet() { clearTimeout(netMinuterie); netMinuterie = 0; if (net) { net = null; cNet.style.display = "none"; } }
+  function planifierNet(ms) { clearTimeout(netMinuterie); netMinuterie = setTimeout(rendreNet, ms === undefined ? 180 : ms); }
+  function rendreNet() {
+    netMinuterie = 0;
+    if (!ouvert || anime || occupe || !o) return;
+    if (trait || pince) return planifierNet(250);
+    const z = vue.z, dpr = window.devicePixelRatio || 1;
+    const rx0 = Math.max(0, -vue.x / z), ry0 = Math.max(0, -vue.y / z), rx1 = Math.min(w, (innerWidth - vue.x) / z), ry1 = Math.min(h, (innerHeight - vue.y) / z);
+    if (rx1 - rx0 < 2 || ry1 - ry0 < 2) return cacherNet();
+    let q = z * dpr;
+    q = Math.min(q, 4096 / (rx1 - rx0), 4096 / (ry1 - ry0));
+    const ox = Math.floor(rx0 * q), oy = Math.floor(ry0 * q), pl = Math.ceil(rx1 * q) - ox, ph = Math.ceil(ry1 * q) - oy;
+    if (pl < 2 || ph < 2) return cacherNet();
+    if (cNet.width !== pl) cNet.width = pl;
+    if (cNet.height !== ph) cNet.height = ph;
+    cNet.style.left = (ox / q) + "px"; cNet.style.top = (oy / q) + "px"; cNet.style.width = (pl / q) + "px"; cNet.style.height = (ph / q) + "px";
+    net = { K: e0 * q, ox, oy, q };
+    if (!peindreNet()) return cacherNet();
+    cNet.style.display = "block";
+  }
+  function peindreNet() {
+    const K = net.K, L = ol * K, H = oh * K;
+    gN.setTransform(1, 0, 0, 1, -net.ox, -net.oy);
+    if (o.image) {
+      const e = T.image(o.image);
+      if (!e.pret) return false;
+      gN.imageSmoothingEnabled = true; gN.imageSmoothingQuality = "high";
+      gN.drawImage(e.img, 0, 0, L, H);
+    } else T.dessinerPapier(gN, L, H, o.papier);
+    if (o.voirPropre && o.propre) { T.dessinerPropre(gN, o.propre, K, o); gN.setTransform(1, 0, 0, 1, -net.ox, -net.oy); T.dessinerTraits(gN, o.traits.slice(o.propre.n || 0), K); }
+    else T.dessinerTraits(gN, o.traits, K);
+    gN.setTransform(1, 0, 0, 1, -net.ox, -net.oy);
+    return true;
+  }
+  F.net = () => (net ? { l: cNet.width, h: cNet.height, K: net.K, visible: cNet.style.display === "block" } : null);
+  // la carte graphique a perdu ses images (veille, pilote relancé) ou la fenêtre revient : tout est repeint
+  function repeindre() { if (!ouvert || anime || !o) return; peindreTout(); planifierNet(0); }
+  for (const c of [cPap, cPro, cEnc, cNet]) c.addEventListener("contextrestored", repeindre);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) repeindre(); });
   function demanderRedessin() { if (sale) return; sale = true; U.boucle.ajouter(() => { sale = false; if (ouvert) redessiner(); return false; }); }
 
   // ---------- ouvrir et reposer (la feuille part de sa place et y retourne) ----------
@@ -62,9 +113,10 @@
     o = page; ouvert = true; anime = true; rect = rectDe; opt = options || {}; change = false;
     if (!o.traits) o.traits = [];
     pile = []; refaits = []; trait = null; pince = null; ptrs.clear();
+    cacherNet(); redimAttente = false; eclat.hidden = true;
     el.hidden = false;
     mesurer(); vueInitiale(); peindreTout(); majOutils();
-    if (o.image && !T.image(o.image).pret) T.imagePrete(o).then(() => { if (o === page) T.rendrePage(o, cPap.width, { toile: cPap, sansEncre: true }); });
+    if (o.image && !T.image(o.image).pret) T.imagePrete(o).then(() => { if (o === page) { T.rendrePage(o, cPap.width, { toile: cPap, sansEncre: true }); planifierNet(0); } });
     if (o.propre && o.propre.v === 2 && C.propre) C.propre.preparer(o).then(() => { if (o === page) dessinerPropre(); });   // photo au propre : scan net, polices
     if (o.propre && o.propre.calque && !o.propre.calqueImg) T.image(o.propre.calque).promesse.then((im) => { if (o === page && im) { o.propre.calqueImg = im; dessinerPropre(); } });
     const a = (rect && rect()) || { x: innerWidth / 2, y: innerHeight / 2, l: w * 0.5, r: 0 };
@@ -76,13 +128,13 @@
       const d = U.douce(t), ds = U.rebond(t);
       sup.style.transform = forme(U.melange(a.x, bx, d), U.melange(a.y, by, d), s0 * Math.pow(vue.z / s0, ds), a.r * (1 - d));
       voile.style.opacity = Math.min(1, t * 1.6).toFixed(3);
-    }, () => { anime = false; appliquer(); });
+    }, () => { anime = false; if (redimAttente) F.redimensionner(); else appliquer(); });
     return true;
   };
   F.fermer = function () {
     if (!ouvert || anime) return;
     if (trait) finTrait();
-    anime = true; el.classList.remove("la");
+    anime = true; el.classList.remove("la"); cacherNet();
     const page = o, b = (rect && rect()) || { x: innerWidth / 2, y: innerHeight / 2, l: w * 0.5, r: 0 };
     const ax = vue.x + w * vue.z / 2, ay = vue.y + h * vue.z / 2, s1 = b.l / w;
     const attente = opt.avantRetour ? Promise.resolve(opt.avantRetour(page, change)).catch(() => {}) : Promise.resolve();
@@ -98,7 +150,13 @@
       });
     });
   };
-  F.redimensionner = function () { if (!ouvert || anime) return; mesurer(); vueInitiale(); peindreTout(); appliquer(); };
+  // la fenêtre change de taille (agrandie, plein écran, tablette tournée) : tout est remesuré et repeint, même si ça arrive pendant l'ouverture
+  F.redimensionner = function () {
+    if (!ouvert) return;
+    if (anime) { redimAttente = true; return; }
+    redimAttente = false;
+    cacherNet(); mesurer(); vueInitiale(); peindreTout(); appliquer();
+  };
 
   // ---------- écrire ----------
   function pression(ev, tr, x, y) {
@@ -118,6 +176,7 @@
     const pr = e.pointerType === "pen" ? (e.pressure > 0 ? e.pressure : 0.5) : 0.6;
     trait = { ptr: p, pr, dx: x, dy: y, temps: U.boucle.estManuel() ? U.maintenant() : e.timeStamp, t: { id: U.id("t"), c: etat.couleur, e: etat.taille, p: [Math.round(x * 10) / 10, Math.round(y * 10) / 10, Math.round(pr * 100) / 100] } };
     T.debutTrait(gE, trait.t, k);
+    if (net) T.debutTrait(gN, trait.t, net.K);
   }
   function point(ev) {
     const tr = trait, [x, y] = versPage(ev.clientX, ev.clientY);
@@ -127,16 +186,18 @@
     tr.dx = x; tr.dy = y;
     tr.t.p.push(Math.round(x * 10) / 10, Math.round(y * 10) / 10, Math.round(pr * 100) / 100);
     T.morceau(gE, tr.t, tr.t.p.length / 3 - 1, k);
+    if (net) T.morceau(gN, tr.t, tr.t.p.length / 3 - 1, net.K);
   }
   function finTrait() {
     const tr = trait; trait = null;
     if (!tr) return;
     if (tr.gomme) { if (tr.retires.length) { pile.push({ t: "retrait", items: tr.retires }); refaits.length = 0; modifie(); } return; }
     T.debutTrait(gE, tr.t, k); T.finTrait(gE, tr.t, k);
+    if (net) { T.debutTrait(gN, tr.t, net.K); T.finTrait(gN, tr.t, net.K); }
     o.traits.push(tr.t); pile.push({ t: "ajout", trait: tr.t }); refaits.length = 0; modifie();
   }
   function modifie() { o.v = (o.v || 0) + 1; change = true; P.sauver(o); majOutils(); }
-  function oublierPropre() { if (!o.propre) return; o.propre = null; o.voirPropre = false; dessinerPropre(); cPro.style.opacity = 0; }
+  function oublierPropre() { if (!o.propre) return; o.propre = null; o.voirPropre = false; dessinerPropre(); cPro.style.opacity = 0; majOutils(); }
   function gommer(x, y) {
     const R = 13 / Math.sqrt(vue.z), R2 = R * R, debut = o.voirPropre && o.propre ? (o.propre.n || 0) : 0;
     let touche = false;
@@ -193,17 +254,18 @@
   }
   function basculer(vers) {
     occupe = true; o.voirPropre = vers; o.v = (o.v || 0) + 1; change = true;
+    cacherNet(); majOutils();
     if (!vers) redessiner();
-    cPro.style.opacity = 1;
+    cPro.style.opacity = 1; eclat.hidden = false;
     S.jouer("magie");
     return new Promise((ok) => U.anim(760, (t) => {
       const a = (vers ? U.douce2(t) : 1 - U.douce2(t)) * 100;
       cPro.style.clipPath = `inset(0 ${(100 - a).toFixed(2)}% 0 0)`; cEnc.style.clipPath = `inset(0 0 0 ${a.toFixed(2)}%)`;
       eclat.style.opacity = Math.sin(Math.PI * t).toFixed(3); eclat.style.transform = `translate3d(${(a / 100 * w).toFixed(1)}px,0,0)`;
     }, () => {
-      cPro.style.clipPath = cEnc.style.clipPath = ""; cPro.style.opacity = vers ? 1 : 0; eclat.style.opacity = 0;
+      cPro.style.clipPath = cEnc.style.clipPath = ""; cPro.style.opacity = vers ? 1 : 0; eclat.style.opacity = 0; eclat.hidden = true;
       if (ouvert) redessiner();
-      occupe = false; majOutils(); P.sauver(o); ok();
+      occupe = false; majOutils(); P.sauver(o); if (ouvert) planifierNet(0); ok();
     }));
   }
 
@@ -219,7 +281,15 @@
       else if (d.action === "doigt") b.classList.toggle("actif", etat.doigtEcrit);
       else if (d.action === "propre") { b.classList.toggle("actif", !!(o && o.voirPropre)); b.querySelector("span").textContent = o && o.voirPropre ? (o.image ? "Original" : "Mon écriture") : "Au propre"; }
     }
+    const pr = !!(o && o.voirPropre && o.propre);            // la pastille : le côté allumé est celui qu'on voit
+    bascule.classList.toggle("propre", pr);
+    for (const b of bascule.querySelectorAll("button")) b.setAttribute("aria-pressed", String((b.dataset.voir === "propre") === pr));
   }
+  F.voit = () => (o && o.image ? (o.voirPropre && o.propre ? "propre" : "original") : null);
+  bascule.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b || !ouvert || !o) return;
+    if ((b.dataset.voir === "propre") !== !!(o.voirPropre && o.propre)) F.action("propre");
+  });
   for (const b of outils.querySelectorAll("[data-couleur] i")) b.style.background = b.parentNode.dataset.couleur;
   outils.addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b || !ouvert) return;
@@ -235,7 +305,7 @@
   // ---------- stylet, doigts, souris ----------
   el.addEventListener("pointerdown", (e) => {
     if (!ouvert || anime) return;
-    if (e.target.closest && e.target.closest(".outils, .fermer")) return;
+    if (e.target.closest && e.target.closest(".outils, .fermer, .bascule")) return;
     e.preventDefault();
     try { el.setPointerCapture(e.pointerId); } catch (x) { /* pointeur d'essai */ }
     const type = e.pointerType;
