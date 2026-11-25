@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="0e6cb6984c24c1b4">
+<meta name="nova-version" content="97d30ca24cf2c9cf">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -371,6 +371,26 @@ header .esp { flex: 1; }
 #fermerSaisie { color: var(--txt2); }
 #dicterSaisie { color: var(--txt2); background: rgba(255, 255, 255, .05); border: 1px solid var(--bord); }
 #dicterSaisie.enCours { color: #ffd0d0; background: rgba(160, 30, 45, .55); border-color: rgba(255, 120, 120, .7); }
+/* 2026-11-25 images dans le fil : bouton « joindre » dans la barre, menu Photo / Galerie au-dessus, miniatures dans les bulles */
+#saisie { gap: 8px; }
+#saisie #fermerSaisie { width: 36px; }
+#saisie #joindre { position: relative; width: 42px; height: 42px; color: var(--txt2); background: rgba(255, 255, 255, .05); border: 1px solid var(--bord); transition: color .3s, border-color .3s, background .3s; }
+#saisie #joindre.actif, #saisie #joindre:active { color: var(--or); border-color: rgba(233, 214, 168, .45); background: rgba(233, 214, 168, .1); }
+#saisie #joindre .nb { position: absolute; top: -5px; right: -5px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; font: 700 10.5px/17px system-ui; color: #1a1408; background: #e9d6a8; display: none; }
+#saisie #joindre.avec .nb { display: block; }
+#choixImage { position: fixed; left: calc(12px + var(--sl, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 118px); z-index: 70; flex-direction: column; gap: 2px; padding: 6px; min-width: 200px;
+  border-radius: 18px; background: rgba(10, 12, 28, .96); border: 1px solid rgba(255, 255, 255, .14); box-shadow: 0 18px 40px rgba(0, 0, 0, .6); animation: choixEntre .28s var(--ressort); }
+#choixImage button { display: flex; align-items: center; gap: 12px; text-align: left; color: #eee; padding: 11px 14px; border-radius: 12px; font: 600 14.5px system-ui; }
+#choixImage button:active { background: rgba(233, 214, 168, .12); }
+@keyframes choixEntre { from { opacity: 0; transform: translateY(8px) scale(.97); } }
+.hb .hbImgs { display: flex; flex-wrap: wrap; gap: 4px; margin: -3px -7px 6px; }
+.hb .hbImgs:last-child { margin-bottom: -4px; }
+.hb .hbImgs img { display: block; width: 132px; height: 132px; object-fit: cover; border-radius: 12px; background: #111a33; cursor: zoom-in; }
+.hb .hbImgs.une img { width: auto; height: auto; max-width: min(62vw, 230px); max-height: 260px; }
+#visionneuse { position: fixed; inset: 0; z-index: 80; display: none; place-items: center; background: rgba(2, 3, 10, .94); padding: calc(var(--st, 0px) + 16px) 12px calc(var(--sb, 0px) + 16px); }
+#visionneuse.vu { display: grid; animation: hbEntre .3s ease; }
+#visionneuse img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px; touch-action: pinch-zoom; }
+#visionneuse button { position: absolute; top: calc(var(--st, 0px) + 12px); right: 14px; width: 44px; height: 44px; border-radius: 50%; color: #fff; font: 400 26px/1 system-ui; background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .25); }
 
 #toast { position: fixed; z-index: 12; left: 50%; top: calc(var(--st) + 58px); max-width: calc(100vw - 48px); transform: translate(-50%, -8px);
   padding: 10px 16px; border-radius: 12px; font-size: 13.5px; line-height: 1.4; text-align: center; color: var(--txt); background: rgba(12, 15, 28, .94);
@@ -555,10 +575,12 @@ html.saisieHaut #app { bottom: 0; padding-top: calc(var(--st) + 70px); }
 <input type="file" id="fichierGalerie" accept="image/*,video/*" multiple hidden>
 <input type="file" id="fichierVideo" accept="video/*" hidden>
 <div id="envoiVideo" role="status" aria-live="polite"><i></i><span></span></div>
-<div id="choixImage" style="display:none;position:fixed;left:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 118px);z-index:70;gap:8px;padding:8px;border-radius:16px;background:rgba(10,12,28,.94);border:1px solid rgba(255,255,255,.14)"><button id="cPhoto" style="color:#eee;padding:10px 14px;font:600 14px system-ui">📷 Photo</button><button id="cGalerie" style="color:#eee;padding:10px 14px;font:600 14px system-ui">🖼 Galerie / capture</button><button id="cVideo" style="color:#eee;padding:10px 14px;font:600 14px system-ui">🎬 Vidéo</button></div>
+<div id="choixImage" style="display:none"><button type="button" id="cPhoto">📷 Prendre une photo</button><button type="button" id="cGalerie">🖼 Galerie / capture</button><button type="button" id="cVideo">🎬 Vidéo</button></div>
+<div id="visionneuse" role="dialog" aria-label="Image"><img alt=""><button type="button" aria-label="Fermer">×</button></div>
 <div id="brouillon" aria-label="Images à envoyer"></div>
 <form id="saisie" autocomplete="off">
   <button type="button" id="fermerSaisie" aria-label="Fermer"><svg class="ic" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+  <button type="button" id="joindre" aria-label="Envoyer une image"><svg class="ic" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M5 17.5l4.5-4.5 3.5 3.5 2.5-2.5 3.5 3.5"/></svg><span class="nb"></span></button>
   <input id="champ" type="text" maxlength="4000" placeholder="Écrire à Nova…" enterkeyhint="send">
   <button type="button" id="dicterSaisie" aria-label="Dicter à Nova"><svg class="ic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
   <button type="submit" id="envoyer" aria-label="Envoyer"><svg class="ic" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
@@ -1969,7 +1991,9 @@ const Sortie = (() => {
           }
           coupure = false;
           if (it.annule) continue;
-          if (r && r.ok) { await retirer(it); continue; }
+          if (r && r.ok) { await retirer(it); etatLocal(it.mid, "envoye"); continue; }
+          // 2026-11-25 : refus définitif du PC (trop grande, pas une image…) : inutile de réessayer, on le dit tout de suite
+          if (r && r.definitif) { await retirer(it); etatLocal(it.mid, ""); if (local === "attente") { local = ""; reecouter = false; maj(); } afficher({ id: "err" + Date.now(), qui: "info", conv: it.conv, texte: "Images non envoyées : " + (r.erreur || "refusées par le PC") }); continue; }
           it.essais = (it.essais || 0) + 1;
           if (it.essais >= 20) { await retirer(it); afficher({ id: "err" + Date.now(), qui: "info", conv: it.conv, texte: (r && r.erreur) || "Message non livré." }); continue; }
           if (it.essais === 2) toast("Le PC refuse l'image : " + ((r && r.erreur) || "erreur inconnue") + ". Nouvel essai…", 5000);   // 2026-11-12 : plus d'échec muet
@@ -1988,6 +2012,7 @@ const Sortie = (() => {
           coupure = false;
           if (it.annule) continue;
           if (r && r.ok) { await retirer(it); toast("Image reçue par Nova.", 2200); continue; }
+          if (r && r.definitif) { await retirer(it); afficher({ id: "err" + Date.now(), qui: "info", conv: it.conv, texte: "Image non envoyée : " + (r.erreur || "refusée par le PC") }); continue; }
           it.essais = (it.essais || 0) + 1;
           if (it.essais >= 20) { await retirer(it); afficher({ id: "err" + Date.now(), qui: "info", conv: it.conv, texte: (r && r.erreur) || "Image non livrée." }); continue; }
           if (it.essais === 2) toast("Le PC refuse l'image : " + ((r && r.erreur) || "erreur inconnue") + ". Nouvel essai…", 5000);
@@ -2159,12 +2184,36 @@ const Videos = (() => {
 // ---- 2026-11-07 images : photo / capture -> PC (Documents\Nova\Recu), par la file d'attente (jamais perdue), redimensionnée si énorme ----
 async function reduireImage(f) {
   if (!window.createImageBitmap) return f;
-  const bm = await createImageBitmap(f), k = Math.min(1, 1600 / Math.max(bm.width, bm.height));
-  if (k === 1 && f.size < 1500000 && /jpeg|png|webp/.test(f.type)) return f;
+  // 2026-11-25 : 2400 px et qualité 0,88 (avant 1600 / 0,86) : une feuille écrite à la main reste lisible ; petite image = gardée telle quelle
+  const bm = await createImageBitmap(f), k = Math.min(1, 2400 / Math.max(bm.width, bm.height));
+  if (k === 1 && f.size < 2500000 && /jpeg|png|webp/.test(f.type)) return f;
   const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(bm.width * k)); c.height = Math.max(1, Math.round(bm.height * k));
-  c.getContext("2d").drawImage(bm, 0, 0, c.width, c.height);
-  return await new Promise((ok, ko) => c.toBlob(b => b ? ok(b) : ko(new Error("toBlob")), "image/jpeg", 0.86));
+  const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);   // PNG transparent : fond blanc, pas noir
+  g.drawImage(bm, 0, 0, c.width, c.height);
+  return await new Promise((ok, ko) => c.toBlob(b => b ? ok(b) : ko(new Error("toBlob")), "image/jpeg", 0.88));
 }
+// 2026-11-25 miniature gardée dans le fil (IndexedDB) : petite (~480 px), jamais l'image entière
+async function miniature(blob) {
+  try {
+    const bm = await createImageBitmap(blob), k = Math.min(1, 480 / Math.max(bm.width, bm.height));
+    const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(bm.width * k)); c.height = Math.max(1, Math.round(bm.height * k));
+    const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(bm, 0, 0, c.width, c.height);
+    return c.toDataURL("image/jpeg", 0.72);
+  } catch (x) { return ""; }
+}
+const IMAGES_PLEINES = new Map();   // miniature -> image entière (cette session seulement), pour la visionneuse
+function ouvrirChoixImage(dansBarre) {
+  const c = $("choixImage");
+  if (c.style.display !== "none") { fermerChoixImage(); return; }
+  let bas = "calc(env(safe-area-inset-bottom,0px) + 118px)";
+  if (dansBarre || $("saisie").classList.contains("vu")) {
+    const br = $("brouillon"), s = $("saisie");
+    const haut = br.classList.contains("vu") ? br.getBoundingClientRect().top : s.getBoundingClientRect().top;
+    if (haut > 0) bas = Math.round(innerHeight - haut + 8) + "px";
+  }
+  c.style.bottom = bas; c.style.display = "flex"; $("joindre").classList.add("actif"); vib(5);
+}
+function fermerChoixImage() { $("choixImage").style.display = "none"; $("joindre").classList.remove("actif"); }
 function vignetteImage(blob, texte) {
   const m = document.createElement("div"); m.className = "msg toi"; m.dataset.conv = conv;
   const im = document.createElement("img"); im.src = URL.createObjectURL(blob); im.style.cssText = "display:block;max-width:70%;max-height:170px;border-radius:12px;margin-bottom:4px";
@@ -2193,8 +2242,9 @@ function rendreBrouillon() {
     x.onclick = () => { const k = brouillon.indexOf(b); if (k >= 0) brouillon.splice(k, 1); try { URL.revokeObjectURL(b.url); } catch (e) {} rendreBrouillon(); vib(4); };
     d.appendChild(x); z.appendChild(d);
   }
-  if (brouillon.length) { const p = document.createElement("button"); p.type = "button"; p.className = "ajout"; p.textContent = "+"; p.setAttribute("aria-label", "Ajouter une image"); p.onclick = () => { $("choixImage").style.display = "flex"; }; z.appendChild(p); }
+  if (brouillon.length) { const p = document.createElement("button"); p.type = "button"; p.className = "ajout"; p.textContent = "+"; p.setAttribute("aria-label", "Ajouter une image"); p.onclick = () => ouvrirChoixImage(); z.appendChild(p); }
   z.classList.toggle("vu", brouillon.length > 0); posBrouillon();
+  const j = $("joindre"); j.classList.toggle("avec", brouillon.length > 0); j.lastElementChild.textContent = brouillon.length || "";
 }
 async function ajouterBrouillon(fichiers) {
   let n = 0;
@@ -2209,7 +2259,7 @@ async function ajouterBrouillon(fichiers) {
     }
     if (f.type && !f.type.startsWith("image/")) { toast("Ce fichier n'est ni une image ni une vidéo."); continue; }
     let blob = f; try { blob = await reduireImage(f); } catch (x) { blob = f; }
-    if (blob.size > 24 * 1024 * 1024) { toast("Cette image est trop grande."); continue; }
+    if (blob.size > 15 * 1024 * 1024) { toast("Cette image est trop grande (maximum 15 Mo)."); continue; }   // 2026-11-25 : même limite que le PC
     brouillon.push({ blob, mime: blob.type || "image/jpeg", url: URL.createObjectURL(blob) }); n++;
   }
   // 2026-11-14 : plus de clavier forcé (il cachait le micro) : il dicte OU écrit, le message part avec les images
@@ -2237,14 +2287,22 @@ async function envoyerGroupe(texte) {
   usages++; garder("nova-usages", String(usages));
   if (sessionSeq === Infinity) sessionSeq = seq;
   vignettesFil(blobs, texte);
-  await Sortie.ajouter({ kind: "groupe", texte, blobs, conv });
+  // 2026-11-25 : la bulle s'écrit TOUT DE SUITE dans le fil, avec ses miniatures (même texte que celui que le PC renverra : une seule bulle)
+  const mins = []; for (const b of blobs) { const m = await miniature(b.blob); if (m) { mins.push(m); try { IMAGES_PLEINES.set(m, URL.createObjectURL(b.blob)); } catch (x) {} } }
+  const tx = String(texte || "").replace(/\s+/g, " ").trim(), n = blobs.length;
+  const aff = (tx ? tx + " " : "") + "📷 " + n + " image" + (n > 1 ? "s" : "");
+  const it = await Sortie.ajouter({ kind: "groupe", texte, blobs, conv });
+  try { if (window.NovaHisto) NovaHisto.recevoir({ id: "loc-" + it.mid, qui: "toi", conv: it.conv || conv, texte: aff, t: Math.round(Date.now() / 1000), loc: "attente", im: mins }); } catch (x) {}
   Sortie.vider();
 }
-$("btnImage").onclick = () => { deverrouillerSon(); const c = $("choixImage"); c.style.display = c.style.display === "none" ? "flex" : "none"; vib(5); };
-$("cPhoto").onclick = () => { $("choixImage").style.display = "none"; $("fichierPhoto").click(); };
-$("cGalerie").onclick = () => { $("choixImage").style.display = "none"; $("fichierGalerie").click(); };
-$("cVideo").onclick = () => { $("choixImage").style.display = "none"; $("fichierVideo").click(); };
-for (const id of ["fichierPhoto", "fichierGalerie", "fichierVideo"]) $(id).onchange = async ev => { const l = [...ev.target.files]; ev.target.value = ""; $("choixImage").style.display = "none"; await ajouterBrouillon(l); };
+$("btnImage").onclick = () => { deverrouillerSon(); ouvrirChoixImage(false); };
+$("joindre").onclick = () => { deverrouillerSon(); ouvrirChoixImage(true); };
+$("joindre").addEventListener("mousedown", ev => ev.preventDefault());   // le clavier reste ouvert
+$("cPhoto").onclick = () => { fermerChoixImage(); $("fichierPhoto").click(); };
+$("cGalerie").onclick = () => { fermerChoixImage(); $("fichierGalerie").click(); };
+$("cVideo").onclick = () => { fermerChoixImage(); $("fichierVideo").click(); };
+document.addEventListener("pointerdown", ev => { const c = $("choixImage"); if (c.style.display !== "none" && !c.contains(ev.target) && !ev.target.closest("#joindre, #btnImage, #brouillon .ajout")) fermerChoixImage(); }, true);
+for (const id of ["fichierPhoto", "fichierGalerie", "fichierVideo"]) $(id).onchange = async ev => { const l = [...ev.target.files]; ev.target.value = ""; fermerChoixImage(); await ajouterBrouillon(l); };
 async function envoyer(texte) {
   texte = (texte || "").trim(); if (!texte && !brouillon.length) return;
   if (brouillon.length) return envoyerGroupe(texte);
@@ -2911,7 +2969,7 @@ window.NovaHisto = (() => {
     if (!db || !sales.size) return;
     try {
       const st = db.transaction("convs", "readwrite").objectStore("convs");
-      for (const c of sales) st.put((listes.get(c) || []).filter(x => !x.tmp).slice(-MAX).map(({ id, qui, texte, t, k, b, c: cl, al }) => ({ id, qui, texte, t, k, b, c: cl, al })), c);
+      for (const c of sales) st.put((listes.get(c) || []).filter(x => !x.tmp).slice(-MAX).map(({ id, qui, texte, t, k, b, c: cl, al, im }) => ({ id, qui, texte, t, k, b, c: cl, al, im })), c);
       sales.clear();
     } catch (x) {}
   }
@@ -2931,8 +2989,23 @@ window.NovaHisto = (() => {
   }
   function bulle(x, neuf) {
     const b = el("div", "hb " + x.qui + (neuf ? " neuf" : "") + (x.loc ? " loc-" + x.loc : "")); b.dataset.id = x.id;
-    if (x.qui === "nova") poserTexte(b, x.texte); else b.textContent = x.texte;
+    remplir(b, x);
     noeuds.set(x.id, b); return b;
+  }
+  // 2026-11-25 images dans le fil : miniatures (data:image/jpeg seulement) au-dessus du texte ; le « 📷 N images » seul ne se répète pas
+  function remplir(b, x) {
+    b.textContent = "";
+    const im = Array.isArray(x.im) ? x.im.filter(s => typeof s === "string" && s.startsWith("data:image/jpeg;base64,")) : [];
+    let texte = x.texte;
+    if (im.length) {
+      const g = el("div", "hbImgs" + (im.length === 1 ? " une" : ""));
+      for (const s of im) { const i = document.createElement("img"); i.src = s; i.alt = "Image envoyée"; i.loading = "lazy"; g.appendChild(i); }
+      b.appendChild(g);
+      texte = texte.replace(/\s*📷 \d+ images?$/u, "");
+      if (!texte) return;
+      const t = document.createElement("span"); t.textContent = texte; b.appendChild(t); return;
+    }
+    if (x.qui === "nova") poserTexte(b, texte); else b.textContent = texte;
   }
   function titre() {
     const c = (typeof convs !== "undefined" && convs.find(y => y.id === affichee)) || null;
@@ -2976,12 +3049,13 @@ window.NovaHisto = (() => {
       if (e.ancien) curseur.set(c, Math.max(d, i));
       const x = L[i]; if (x.texte === texte || x.id !== id) return;
       const etaitEnBas = enBas(); x.texte = texte; x.k = k; if (!x.tmp) sauver(c);
-      if (ici) { const b = noeuds.get(id); if (b) { b.textContent = ""; if (x.qui === "nova") poserTexte(b, texte); else b.textContent = texte; } if (i === L.length - 1) apres(etaitEnBas, x); }
+      if (ici) { const b = noeuds.get(id); if (b) remplir(b, x); if (i === L.length - 1) apres(etaitEnBas, x); }
       return;
     }
     const x = { id, qui: e.qui, texte, t: e.ancien ? 0 : (+e.t || Math.round(Date.now() / 1000)), k };
     if (e.loc) x.loc = e.loc;
     if (e.mid) x.mid = e.mid;
+    if (Array.isArray(e.im) && e.im.length && e.qui === "toi") x.im = e.im.slice(0, 12);
     if (e.brut) x.b = 1; else if (!e.ancien) x.c = 1;
     if (e.qui === "info") x.tmp = true;   // les petites infos (« message non livré ») ne sont pas gardées
     let ou = L.length;
@@ -3023,6 +3097,16 @@ window.NovaHisto = (() => {
   $("histoFermer").onclick = ev => { ev.stopPropagation(); basculer(false); };
   pastille.onclick = ev => { ev.stopPropagation(); vib(5); enDescendant(true); };
   corps.addEventListener("scroll", () => { if (enBas()) pastille.classList.remove("vu"); }, { passive: true });
+  // 2026-11-25 toucher une image du fil : en grand (l'image entière si elle est encore là, sinon la miniature)
+  const vis = $("visionneuse");
+  const fermerVis = () => { vis.classList.remove("vu"); vis.firstElementChild.removeAttribute("src"); };
+  vis.onclick = ev => { ev.stopPropagation(); fermerVis(); };
+  addEventListener("keydown", ev => { if (ev.key === "Escape" && vis.classList.contains("vu")) fermerVis(); });
+  filH.addEventListener("click", ev => {
+    const i = ev.target.closest(".hbImgs img"); if (!i) return;
+    ev.stopPropagation(); vib(5);
+    vis.firstElementChild.src = IMAGES_PLEINES.get(i.src) || i.src; vis.classList.add("vu");
+  }, true);
   filH.addEventListener("click", ev => {   // toucher une réponse de Nova : la réécouter (comme dans « Le fil »)
     const b = ev.target.closest(".hb.nova"); if (!b) return;
     if (getSelection && String(getSelection()).length) return;
