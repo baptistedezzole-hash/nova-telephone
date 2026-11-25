@@ -1,0 +1,296 @@
+// Cartable, interface : écrire sur une feuille. Le stylet écrit (pression), le doigt déplace, deux doigts zooment.
+"use strict";
+(function (C) {
+  const U = C.U, T = C.T, S = C.sons, P = C.pont;
+  const F = C.feuille = {};
+  const el = document.getElementById("ecriture"), sup = el.querySelector(".support"), voile = el.querySelector(".voile");
+  const cPap = el.querySelector("canvas.papier"), cPro = el.querySelector("canvas.propre"), cEnc = el.querySelector("canvas.encre");
+  const eclat = el.querySelector(".eclat"), outils = el.querySelector(".outils");
+  const gP = cPro.getContext("2d"), gE = cEnc.getContext("2d", { desynchronized: true });
+  const etat = { outil: "stylo", couleur: "#1b1b26", taille: 2.6, doigtEcrit: true, styletVu: false };
+  F.etat = etat;
+  let o = null, ouvert = false, anime = false, occupe = false, rect = null, opt = null, change = false;
+  let ol = 840, oh = 1188, e0 = 1, w = 100, h = 100, k = 1, zone = null;
+  const vue = { x: 0, y: 0, z: 1 };
+  let pile = [], refaits = [], trait = null, pince = null, sale = false;
+  const ptrs = new Map();
+  F.ouvert = () => ouvert;
+  F.page = () => o;
+
+  // ---------- la mise en page ----------
+  function mesurer() {
+    const W = innerWidth, H = innerHeight, paysage = W > H;
+    el.classList.toggle("portrait", !paysage);
+    zone = paysage ? { x: 86, y: 14, l: W - 86 - 70, h: H - 28 } : { x: 8, y: 60, l: W - 16, h: H - 60 - 84 };
+    ol = o.l || T.PAGE_L; oh = o.h || T.PAGE_H;
+    e0 = Math.min(zone.l / ol, zone.h / oh);
+    w = ol * e0; h = oh * e0;
+    sup.style.width = w.toFixed(1) + "px"; sup.style.height = h.toFixed(1) + "px";
+    const lc = Math.round(Math.min(2200, w * (window.devicePixelRatio || 1) * 1.45));
+    k = lc / ol;
+    for (const c of [cPap, cPro, cEnc]) { c.width = lc; c.height = Math.round(lc * oh / ol); }
+  }
+  function vueInitiale() {
+    const z = 1;   // la page entière, centrée (en paysage elle ne dépasse plus en bas ; pincer pour zoomer)
+    vue.z = z; vue.x = zone.x + (zone.l - w * z) / 2; vue.y = z > 1 ? zone.y : zone.y + (zone.h - h) / 2;
+  }
+  function borner() {
+    vue.z = U.borne(vue.z, 0.5, 5);
+    vue.x = U.borne(vue.x, 90 - w * vue.z, innerWidth - 90);
+    vue.y = U.borne(vue.y, 90 - h * vue.z, innerHeight - 90);
+  }
+  const forme = (cx, cy, s, r) => `translate3d(${cx.toFixed(2)}px,${cy.toFixed(2)}px,0) rotate(${r.toFixed(3)}deg) scale(${s.toFixed(5)}) translate(${(-w / 2).toFixed(2)}px,${(-h / 2).toFixed(2)}px)`;
+  function appliquer() { sup.style.transform = forme(vue.x + w * vue.z / 2, vue.y + h * vue.z / 2, vue.z, 0); }
+  const versPage = (sx, sy) => [(sx - vue.x) / (e0 * vue.z), (sy - vue.y) / (e0 * vue.z)];
+
+  function peindreTout() {
+    T.rendrePage(o, cPap.width, { toile: cPap, sansEncre: true });
+    dessinerPropre(); redessiner();
+    cPro.style.opacity = o.voirPropre && o.propre ? 1 : 0;
+  }
+  function dessinerPropre() { gP.clearRect(0, 0, cPro.width, cPro.height); if (o.propre) T.dessinerPropre(gP, o.propre, k, o); }
+  function redessiner() {
+    gE.clearRect(0, 0, cEnc.width, cEnc.height);
+    T.dessinerTraits(gE, o.voirPropre && o.propre ? o.traits.slice(o.propre.n || 0) : o.traits, k);
+  }
+  function demanderRedessin() { if (sale) return; sale = true; U.boucle.ajouter(() => { sale = false; if (ouvert) redessiner(); return false; }); }
+
+  // ---------- ouvrir et reposer (la feuille part de sa place et y retourne) ----------
+  // rectDe() rend { x, y, l, r } : centre, largeur et angle de la feuille à l'écran ; options : { avantRetour(page) -> promesse, fini(page, change) }
+  F.ouvrir = function (page, rectDe, options) {
+    if (ouvert) return false;
+    o = page; ouvert = true; anime = true; rect = rectDe; opt = options || {}; change = false;
+    if (!o.traits) o.traits = [];
+    pile = []; refaits = []; trait = null; pince = null; ptrs.clear();
+    el.hidden = false;
+    mesurer(); vueInitiale(); peindreTout(); majOutils();
+    if (o.image && !T.image(o.image).pret) T.imagePrete(o).then(() => { if (o === page) T.rendrePage(o, cPap.width, { toile: cPap, sansEncre: true }); });
+    if (o.propre && o.propre.v === 2 && C.propre) C.propre.preparer(o).then(() => { if (o === page) dessinerPropre(); });   // photo au propre : scan net, polices
+    if (o.propre && o.propre.calque && !o.propre.calqueImg) T.image(o.propre.calque).promesse.then((im) => { if (o === page && im) { o.propre.calqueImg = im; dessinerPropre(); } });
+    const a = (rect && rect()) || { x: innerWidth / 2, y: innerHeight / 2, l: w * 0.5, r: 0 };
+    const bx = vue.x + w * vue.z / 2, by = vue.y + h * vue.z / 2, s0 = a.l / w;
+    sup.style.transform = forme(a.x, a.y, s0, a.r); voile.style.opacity = 0;
+    void el.offsetWidth; el.classList.add("la");
+    S.jouer("feuille");
+    U.anim(400, (t) => {
+      const d = U.douce(t), ds = U.rebond(t);
+      sup.style.transform = forme(U.melange(a.x, bx, d), U.melange(a.y, by, d), s0 * Math.pow(vue.z / s0, ds), a.r * (1 - d));
+      voile.style.opacity = Math.min(1, t * 1.6).toFixed(3);
+    }, () => { anime = false; appliquer(); });
+    return true;
+  };
+  F.fermer = function () {
+    if (!ouvert || anime) return;
+    if (trait) finTrait();
+    anime = true; el.classList.remove("la");
+    const page = o, b = (rect && rect()) || { x: innerWidth / 2, y: innerHeight / 2, l: w * 0.5, r: 0 };
+    const ax = vue.x + w * vue.z / 2, ay = vue.y + h * vue.z / 2, s1 = b.l / w;
+    const attente = opt.avantRetour ? Promise.resolve(opt.avantRetour(page, change)).catch(() => {}) : Promise.resolve();
+    S.jouer("pose", 0.8);
+    U.anim(300, (t) => {
+      const d = U.douce2(t);
+      sup.style.transform = forme(U.melange(ax, b.x, d), U.melange(ay, b.y, d), vue.z * Math.pow(s1 / vue.z, d), b.r * d);
+      voile.style.opacity = (1 - d).toFixed(3);
+    }, () => {
+      attente.then(() => {
+        if (opt.fini) opt.fini(page, change);
+        el.hidden = true; ouvert = false; anime = false; o = null; ptrs.clear();
+      });
+    });
+  };
+  F.redimensionner = function () { if (!ouvert || anime) return; mesurer(); vueInitiale(); peindreTout(); appliquer(); };
+
+  // ---------- écrire ----------
+  function pression(ev, tr, x, y) {
+    if (ev.pointerType === "pen") return ev.pressure > 0 ? ev.pressure : 0.5;
+    const t = U.boucle.estManuel() ? U.maintenant() : ev.timeStamp, dt = t - tr.temps;
+    if (dt > 0.5) {
+      const v = Math.hypot(x - tr.dx, y - tr.dy) * e0 * vue.z / (dt / 1000);              // pixels par seconde : vite = fin, lent = appuyé
+      tr.pr += (U.borne(0.85 - v * 0.0009, 0.25, 0.85) - tr.pr) * 0.3;
+      tr.temps = t;
+    }
+    return tr.pr;
+  }
+  function debutTrait(p, e) {
+    const [x, y] = versPage(e.clientX, e.clientY);
+    const gomme = etat.outil === "gomme" || (e.pointerType === "pen" && (e.button === 5 || (e.buttons & 32)));
+    if (gomme) { trait = { gomme: true, ptr: p, retires: [] }; gommer(x, y); return; }
+    const pr = e.pointerType === "pen" ? (e.pressure > 0 ? e.pressure : 0.5) : 0.6;
+    trait = { ptr: p, pr, dx: x, dy: y, temps: U.boucle.estManuel() ? U.maintenant() : e.timeStamp, t: { id: U.id("t"), c: etat.couleur, e: etat.taille, p: [Math.round(x * 10) / 10, Math.round(y * 10) / 10, Math.round(pr * 100) / 100] } };
+    T.debutTrait(gE, trait.t, k);
+  }
+  function point(ev) {
+    const tr = trait, [x, y] = versPage(ev.clientX, ev.clientY);
+    if (tr.gomme) return gommer(x, y);
+    if (Math.hypot(x - tr.dx, y - tr.dy) < 0.6) return;
+    const pr = pression(ev, tr, x, y);
+    tr.dx = x; tr.dy = y;
+    tr.t.p.push(Math.round(x * 10) / 10, Math.round(y * 10) / 10, Math.round(pr * 100) / 100);
+    T.morceau(gE, tr.t, tr.t.p.length / 3 - 1, k);
+  }
+  function finTrait() {
+    const tr = trait; trait = null;
+    if (!tr) return;
+    if (tr.gomme) { if (tr.retires.length) { pile.push({ t: "retrait", items: tr.retires }); refaits.length = 0; modifie(); } return; }
+    T.debutTrait(gE, tr.t, k); T.finTrait(gE, tr.t, k);
+    o.traits.push(tr.t); pile.push({ t: "ajout", trait: tr.t }); refaits.length = 0; modifie();
+  }
+  function modifie() { o.v = (o.v || 0) + 1; change = true; P.sauver(o); majOutils(); }
+  function oublierPropre() { if (!o.propre) return; o.propre = null; o.voirPropre = false; dessinerPropre(); cPro.style.opacity = 0; }
+  function gommer(x, y) {
+    const R = 13 / Math.sqrt(vue.z), R2 = R * R, debut = o.voirPropre && o.propre ? (o.propre.n || 0) : 0;
+    let touche = false;
+    for (let i = o.traits.length - 1; i >= debut; i--) {
+      const p = o.traits[i].p; let dedans = false;
+      for (let j = 0; j < p.length; j += 3) { const dx = p[j] - x, dy = p[j + 1] - y; if (dx * dx + dy * dy < R2) { dedans = true; break; } }
+      if (!dedans) continue;
+      if (o.propre && i < (o.propre.n || 0)) oublierPropre();
+      trait.retires.push({ i, trait: o.traits[i] }); o.traits.splice(i, 1); touche = true;
+    }
+    if (touche) demanderRedessin();
+  }
+  F.action = function (nom) {
+    if (!ouvert || anime || occupe) return;
+    if (nom === "annuler") {
+      const a = pile.pop(); if (!a) return;
+      if (a.t === "ajout") { const i = o.traits.indexOf(a.trait); if (i >= 0) { if (o.propre && i < (o.propre.n || 0)) oublierPropre(); o.traits.splice(i, 1); } }
+      else for (let j = a.items.length - 1; j >= 0; j--) o.traits.splice(Math.min(a.items[j].i, o.traits.length), 0, a.items[j].trait);
+      refaits.push(a); modifie(); redessiner();
+    } else if (nom === "refaire") {
+      const a = refaits.pop(); if (!a) return;
+      if (a.t === "ajout") o.traits.push(a.trait);
+      else for (const it of a.items) { const i = o.traits.indexOf(it.trait); if (i >= 0) { if (o.propre && i < (o.propre.n || 0)) oublierPropre(); o.traits.splice(i, 1); } }
+      pile.push(a); modifie(); redessiner();
+    } else if (nom === "doigt") { etat.doigtEcrit = !etat.doigtEcrit; majOutils(); C.dire(etat.doigtEcrit ? "Le doigt écrit." : "Le doigt déplace la feuille."); }
+    else if (nom === "propre") return auPropre();
+  };
+  F.outil = function (nom) { etat.outil = nom; majOutils(); };
+
+  // ---------- mettre au propre ----------
+  async function auPropre() {
+    const page = o;
+    if (o.voirPropre && o.propre) return basculer(false);
+    if (o.image && C.propre) {                             // une photo : scan net tout de suite, ou la version redessinée si elle existe ; l'original reste
+      if (!C.propre.estPhoto(o.propre)) o.propre = { v: 2, n: 0, scan: true };
+      occupe = true; el.classList.add("cherche");
+      await U.attendre(60);
+      try { await C.propre.preparer(o); } catch (e) { console.error(e); }
+      el.classList.remove("cherche"); occupe = false;
+      if (!ouvert || o !== page) return;
+      dessinerPropre();
+      return basculer(true);
+    }
+    if (!o.traits.length) return C.dire("Écris d'abord quelque chose.");
+    if (o.propre && o.propre.n === o.traits.length) return basculer(true);
+    occupe = true; el.classList.add("cherche");
+    let r = null;
+    try { r = await P.reconnaitre(o); } catch (e) { console.error(e); }
+    el.classList.remove("cherche"); occupe = false;
+    if (!ouvert || o !== page) return;
+    if (!r) return C.dire("La mise au propre n'a pas marché.");
+    o.propre = r; dessinerPropre();
+    return basculer(true);
+  }
+  function basculer(vers) {
+    occupe = true; o.voirPropre = vers; o.v = (o.v || 0) + 1; change = true;
+    if (!vers) redessiner();
+    cPro.style.opacity = 1;
+    S.jouer("magie");
+    return new Promise((ok) => U.anim(760, (t) => {
+      const a = (vers ? U.douce2(t) : 1 - U.douce2(t)) * 100;
+      cPro.style.clipPath = `inset(0 ${(100 - a).toFixed(2)}% 0 0)`; cEnc.style.clipPath = `inset(0 0 0 ${a.toFixed(2)}%)`;
+      eclat.style.opacity = Math.sin(Math.PI * t).toFixed(3); eclat.style.transform = `translate3d(${(a / 100 * w).toFixed(1)}px,0,0)`;
+    }, () => {
+      cPro.style.clipPath = cEnc.style.clipPath = ""; cPro.style.opacity = vers ? 1 : 0; eclat.style.opacity = 0;
+      if (ouvert) redessiner();
+      occupe = false; majOutils(); P.sauver(o); ok();
+    }));
+  }
+
+  // ---------- les outils ----------
+  function majOutils() {
+    for (const b of outils.querySelectorAll("button")) {
+      const d = b.dataset;
+      if (d.outil) b.classList.toggle("actif", d.outil === etat.outil);
+      else if (d.couleur) b.classList.toggle("actif", d.couleur === etat.couleur);
+      else if (d.taille) b.classList.toggle("actif", +d.taille === etat.taille);
+      else if (d.action === "annuler") b.disabled = !pile.length;
+      else if (d.action === "refaire") b.disabled = !refaits.length;
+      else if (d.action === "doigt") b.classList.toggle("actif", etat.doigtEcrit);
+      else if (d.action === "propre") { b.classList.toggle("actif", !!(o && o.voirPropre)); b.querySelector("span").textContent = o && o.voirPropre ? (o.image ? "Original" : "Mon écriture") : "Au propre"; }
+    }
+  }
+  for (const b of outils.querySelectorAll("[data-couleur] i")) b.style.background = b.parentNode.dataset.couleur;
+  outils.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b || !ouvert) return;
+    const d = b.dataset;
+    if (d.outil) etat.outil = d.outil;
+    else if (d.couleur) { etat.couleur = d.couleur; etat.outil = "stylo"; }
+    else if (d.taille) etat.taille = +d.taille;
+    else if (d.action) return F.action(d.action);
+    majOutils();
+  });
+  el.querySelector(".fermer").addEventListener("click", () => F.fermer());
+
+  // ---------- stylet, doigts, souris ----------
+  el.addEventListener("pointerdown", (e) => {
+    if (!ouvert || anime) return;
+    if (e.target.closest && e.target.closest(".outils, .fermer")) return;
+    e.preventDefault();
+    try { el.setPointerCapture(e.pointerId); } catch (x) { /* pointeur d'essai */ }
+    const type = e.pointerType;
+    if (type === "pen" && !etat.styletVu) { etat.styletVu = true; etat.doigtEcrit = false; majOutils(); }
+    const p = { id: e.pointerId, type, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, bouge: false, k: "vue", voile: e.target === voile };
+    ptrs.set(p.id, p);
+    const doigts = Array.from(ptrs.values()).filter((q) => q.type === "touch");
+    if (type === "touch" && doigts.length === 2) {
+      if (trait && trait.ptr.type === "touch") { trait = null; redessiner(); }                 // deux doigts : on ne trace pas, on déplace
+      doigts.forEach((q) => { q.k = "vue"; q.bouge = true; });
+      pince = { a: doigts[0], b: doigts[1], d0: Math.hypot(doigts[0].x - doigts[1].x, doigts[0].y - doigts[1].y) || 1, z0: vue.z, p: versPage((doigts[0].x + doigts[1].x) / 2, (doigts[0].y + doigts[1].y) / 2) };
+      return;
+    }
+    const [x, y] = versPage(p.x, p.y), dedans = x > -10 && y > -10 && x < ol + 10 && y < oh + 10;
+    const ecrit = type === "pen" || (type === "mouse" && e.button === 0) || (type === "touch" && etat.doigtEcrit && doigts.length === 1);
+    if (ecrit && dedans && !trait && !occupe) { p.k = "trait"; debutTrait(p, e); }
+  });
+  addEventListener("pointermove", (e) => {
+    const p = ptrs.get(e.pointerId); if (!p || !ouvert) return;
+    if (p.k === "trait" && trait && trait.ptr === p) {
+      let evs = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
+      if (!evs || !evs.length) evs = [e];
+      for (const ev of evs) point(ev);
+      p.x = e.clientX; p.y = e.clientY;
+      return;
+    }
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    if (!p.bouge && Math.hypot(p.x - p.x0, p.y - p.y0) > 6) p.bouge = true;
+    if (pince && (pince.a === p || pince.b === p)) {
+      const a = pince.a, b = pince.b, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      vue.z = U.borne(pince.z0 * Math.hypot(a.x - b.x, a.y - b.y) / pince.d0, 0.5, 5);
+      vue.x = mx - pince.p[0] * e0 * vue.z; vue.y = my - pince.p[1] * e0 * vue.z;
+      borner(); appliquer();
+    } else if (p.k === "vue" && p.bouge) { vue.x += dx; vue.y += dy; borner(); appliquer(); }
+  });
+  function fin(e) {
+    const p = ptrs.get(e.pointerId); if (!p) return;
+    ptrs.delete(p.id);
+    if (pince && (pince.a === p || pince.b === p)) pince = null;
+    if (trait && trait.ptr === p) { if (e.type === "pointercancel" && !trait.gomme) { trait = null; redessiner(); } else finTrait(); return; }
+    if (p.k === "vue" && !p.bouge && p.voile && e.type === "pointerup") F.fermer();                // un petit coup à côté de la feuille : on la repose
+  }
+  addEventListener("pointerup", fin);
+  addEventListener("pointercancel", fin);
+  el.addEventListener("wheel", (e) => {
+    if (!ouvert || anime) return;
+    e.preventDefault();
+    if (e.ctrlKey) {
+      const [px, py] = versPage(e.clientX, e.clientY);
+      vue.z = U.borne(vue.z * Math.exp(-e.deltaY * 0.01), 0.5, 5);
+      vue.x = e.clientX - px * e0 * vue.z; vue.y = e.clientY - py * e0 * vue.z;
+    } else if (e.shiftKey) vue.x -= e.deltaY + e.deltaX;
+    else { vue.y -= e.deltaY; vue.x -= e.deltaX; }
+    borner(); appliquer();
+  }, { passive: false });
+  el.addEventListener("contextmenu", (e) => e.preventDefault());
+})(window.Cartable);
