@@ -95,6 +95,7 @@
       for (const bt of b.el.querySelectorAll("button")) bt.setAttribute("aria-pressed", String((bt.dataset.voir === "propre") === pr));
       b.el.style.left = Math.round(bx + (i ? 1.5 : 0.5) * pw) + "px"; b.el.style.top = Math.round(by + ph - 8) + "px";
     });
+    majPastilles();
   }
   async function basculerPage(pg, veut) {
     if (!ouvert || anime || bascOccupe || !pg || !pg.image || !C.propre) return;
@@ -119,6 +120,195 @@
     return true;
   };
   K.bascules = () => basc.map((b) => (b.el.hidden ? null : { voit: b.el.classList.contains("propre") ? "propre" : "original", rect: b.el.getBoundingClientRect().toJSON() }));
+
+  // ---------- enlever une page : la pastille « Sortir / Jeter » au coin de la page, ou on l'attrape et on la tire dehors ----------
+  const elCorb = document.getElementById("corbeille");
+  const IC_P = { sortir: "M12 4v11M7 10l5 5 5-5M4 20h16", jeter: "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" };
+  let choix = 1, arr = null, enVol = 0, vues0 = "";
+  // la page visible d'un côté (0 = gauche, 1 = droite) : son rang dans le classeur, ou -1
+  const indexVu = (c) => { if (!k) return -1; const j = double ? (c ? 2 * s : 2 * s - 1) : (c ? s : -1); return j >= 0 && j < nb() ? j : -1; };
+  const centre = (i) => ({ x: bx + (double && i % 2 === 1 ? 0.5 : 1.5) * pw, y: by + ph / 2 });
+  const signature = () => (k ? k.pages.map((pg) => pg.id + ":" + (pg.v || 0)).join(",") + "|" + k.nom : "");
+  const past = [0, 1].map((c) => {
+    const e = U.el("div", "bascule pastille", el); e.hidden = true;
+    for (const [quoi, nom, aide] of [["sortir", "Sortir", "Sortir sur le bureau"], ["jeter", "Jeter", "Jeter à la corbeille (Suppr)"]]) {
+      const b = U.el("button", "", e); b.dataset.quoi = quoi; b.title = aide; b.setAttribute("aria-label", aide);
+      b.innerHTML = `<svg viewBox="0 0 24 24"><path d="${IC_P[quoi]}"/></svg>`;
+      U.el("span", "", b).textContent = nom;
+    }
+    const x = { el: e, i: -1 };
+    e.addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (!b || x.i < 0) return; choix = c; if (b.dataset.quoi === "jeter") K.jeterPage(x.i); else K.sortirPage(x.i); });
+    e.addEventListener("pointerenter", () => choisir(c));
+    return x;
+  });
+  function choisir(c) { if (c === choix || indexVu(c) < 0) return; choix = c; majPastilles(); }
+  function majPastilles() {
+    const libre = ouvert && !anime && !vols.length && fouille.hidden && !arr;
+    if (indexVu(choix) < 0) choix = indexVu(1) >= 0 ? 1 : 0;
+    past.forEach((p, c) => {
+      const j = libre ? indexVu(c) : -1; p.i = j; p.el.hidden = j < 0;
+      if (j < 0) return;
+      const photo = !!k.pages[j].image, enHaut = photo && pw < 440;        // une photo a déjà sa pastille en bas : sur petit écran, on monte
+      p.el.classList.toggle("court", photo || pw < 460); p.el.classList.toggle("a-gauche", !c);
+      p.el.classList.toggle("choisie", c === choix && indexVu(1 - c) >= 0);
+      p.el.style.left = Math.round(c ? bx + 2 * pw - 12 : bx + 12) + "px"; p.el.style.top = Math.round(enHaut ? by + 10 : by + ph - 8) + "px";
+    });
+  }
+  // la page décollée : une copie qui suit le doigt, ou qui s'envole
+  function poserF(a) {
+    a.el.style.transform = `translate3d(${(a.x - pw / 2).toFixed(1)}px,${(a.y - ph / 2).toFixed(1)}px,0) rotate(${a.r.toFixed(2)}deg) scale(${a.ech.toFixed(4)})`;
+    a.el.style.opacity = a.op.toFixed(3);
+  }
+  function fantome(pg, i) {
+    const e = U.el("div", "arrache", el), c = centre(i);
+    e.style.width = pw + "px"; e.style.height = ph + "px"; fond(e, pg);
+    const a = { el: e, pg, i, gauche: double && i % 2 === 1, x: c.x, y: c.y, ech: 1, r: 0, op: 1 };
+    poserF(a);
+    return a;
+  }
+  // on attrape la page : elle se décolle et suit le doigt ; la corbeille se montre
+  function saisirPage(i, x, y) {
+    if (arr || enVol || !fouille.hidden) return false;
+    poserTout();
+    const pg = k.pages[i]; if (!pg) return false;
+    const a = arr = fantome(pg, i);
+    a.gx = x - a.x; a.gy = y - a.y; a.px = x; a.py = y; a.x0 = x; a.y0 = y;
+    a.m = new U.Ressort(0, 190, 21); a.m.c = 1; a.inc = new U.Ressort(0, 130, 15); a.vit = new U.Vitesse(); a.vit.noter(x, y);
+    (a.gauche ? stG : stD).classList.add("otee"); a.el.classList.add("tenue");
+    document.body.classList.add("porte", "corb-haut");
+    S.jouer("prise"); majBascules();
+    U.boucle.ajouter(pasArr);
+    return true;
+  }
+  function pasArr(dt) {
+    const a = arr; if (!a || a.fini || a.retour) return false;
+    a.m.pas(dt); a.inc.pas(dt);
+    const m = U.borne(a.m.v, 0, 1.15);
+    if (a.vue) {                                              // le bureau la porte déjà : la copie suit, le temps que le classeur se referme
+      const v = a.vue, o = a.pg;
+      if (!ouvert || B.vue(o.id) !== v || v.vol) { finFantome(); return false; }
+      const c = B.ecran(o.x, o.y), z = B.cam.z;
+      a.x = c.x + a.ox * (1 - m); a.y = c.y + a.oy * (1 - m);
+      a.ech = U.melange(a.e0, Math.max(v.l * z / pw, v.h * z / ph) * 1.07, m); a.r = U.melange(a.r0, v.inc.v + (o.r || 0), U.borne(m, 0, 1));
+    } else {
+      a.inc.c = U.borne(a.vit.lire().x * 0.011, -12, 12);
+      a.x = a.px - a.gx; a.y = a.py - a.gy; a.ech = 1 - 0.06 * m; a.r = a.inc.v;
+    }
+    poserF(a);
+  }
+  function suivreArr(e) {
+    const a = arr; if (!a || a.vue || a.retour) return;
+    a.px = e.clientX; a.py = e.clientY; a.vit.noter(a.px, a.py);
+    const hors = a.py < by - 10 || a.py > by + ph + 24 || a.px < (double ? bx : bx + pw) - 24 || a.px > bx + 2 * pw + 24;
+    if (hors || Math.hypot(a.px - a.x0, a.py - a.y0) > (double ? Math.min(0.22 * ph, 170) : 110)) arracher(e);
+  }
+  // elle sort du classeur : le classeur se referme vite, et le bureau prend la page sous le doigt (inertie, corbeille, autre classeur)
+  function arracher(e) {
+    const a = arr, pg = a.pg, cl = k, d = P.donnees(), i = cl.pages.indexOf(pg);
+    if (i < 0) return reposer();
+    cl.pages.splice(i, 1); d.objets.push(pg);
+    s = U.borne(s, 0, maxS()); cl.s = s; pg.r = (Math.random() - 0.5) * 7;
+    stG.classList.remove("otee"); stD.classList.remove("otee");
+    try { scene.releasePointerCapture(e.pointerId); } catch (x) { /* pointeur d'essai */ }
+    ptr = null;
+    a.ox = a.x - e.clientX; a.oy = a.y - e.clientY; a.e0 = a.ech; a.r0 = a.r; a.m.poser(0); a.m.c = 1;
+    a.vue = B.sortirSousLeDoigt(pg, e); B.cacher(a.vue, true);
+    majStatiques(); B.majClasseur(kv); P.sauver();
+    S.jouer("feuille");
+    C.dire(`Page sortie de « ${cl.nom} »`, { libelle: "Annuler", action() { remettre(pg, cl, i); } });
+    fermer(270);
+  }
+  // lâchée dans le classeur : elle retourne à sa place
+  function reposer() {
+    const a = arr; if (!a || a.retour || a.vue) return;
+    a.retour = true;
+    const c = centre(a.i), x0 = a.x, y0 = a.y, e0 = a.ech, r0 = a.r;
+    document.body.classList.remove("porte", "corb-haut"); a.el.classList.remove("tenue");
+    U.anim(210, (t) => { const d = U.douce2(t); a.x = U.melange(x0, c.x, d); a.y = U.melange(y0, c.y, d); a.ech = U.melange(e0, 1, d); a.r = r0 * (1 - d); poserF(a); }, () => { finFantome(); S.jouer("pose", 0.6); });
+  }
+  function finFantome() {
+    const a = arr; if (!a) return;
+    arr = null; a.fini = true; a.el.remove();
+    stG.classList.remove("otee"); stD.classList.remove("otee");
+    document.body.classList.remove("corb-haut");
+    if (a.vue) B.cacher(a.vue, false);
+    if (ouvert && !anime) majBascules();
+  }
+  // retire la page du classeur ouvert et rend sa copie, prête à s'envoler
+  function retirer(i) {
+    if (!ouvert || anime || arr || enVol || !fouille.hidden || ptr) return null;
+    poserTout();
+    const pg = k.pages[i]; if (!pg) return null;
+    const a = fantome(pg, i);
+    k.pages.splice(i, 1); s = U.borne(s, 0, maxS()); k.s = s;
+    majStatiques(); B.majClasseur(kv); precharger();
+    return a;
+  }
+  // « Annuler » : la page retrouve sa place dans le classeur
+  function remettre(pg, cl, i) {
+    const d = P.donnees();
+    if (d.objets.indexOf(cl) < 0 || cl.pages.indexOf(pg) >= 0) return false;
+    const j = d.objets.indexOf(pg), c = d.corbeille.indexOf(pg);
+    if (j < 0 && c < 0) return false;                         // elle est déjà rangée ailleurs
+    if (j >= 0) { d.objets.splice(j, 1); B.retirer(pg.id); } else d.corbeille.splice(c, 1);
+    i = Math.min(i, cl.pages.length); cl.pages.splice(i, 0, pg);
+    const v = B.vue(cl.id); if (v) { B.majClasseur(v); if (!(ouvert && k === cl)) B.sursaut(v); }
+    S.jouer("range"); P.sauver();
+    if (ouvert && k === cl && !anime) { if (!fouille.hidden) construire(); else sauter(double ? Math.ceil(i / 2) : i); }
+    return true;
+  }
+  // bouton « Sortir » : la page quitte le classeur (qui reste ouvert) et se pose sur le bureau, à côté
+  K.sortirPage = function (i) {
+    if (i === undefined) i = indexVu(choix);
+    const cl = k, d = P.donnees(), a = retirer(i); if (!a) return false;
+    const pg = a.pg, sens = a.gauche ? -1 : 1;
+    pg.x = U.borne(cl.x + 190 + Math.random() * 50, 100, B.ML - 100); pg.y = U.borne(cl.y + (Math.random() - 0.5) * 120, 120, B.MH - 120); pg.r = (Math.random() - 0.5) * 12; pg.z = 0;
+    d.objets.push(pg); B.ajouter(pg); P.sauver();
+    S.jouer("feuille"); enVol++;
+    const x0 = a.x, y0 = a.y, dx = sens * Math.min(pw * 0.8, 300);
+    U.anim(430, (t) => {
+      const e = U.douce(t);
+      a.x = x0 + dx * e; a.y = y0 + ph * 0.16 * e - Math.sin(Math.PI * t) * 46; a.ech = U.melange(1, 0.4, e); a.r = sens * 16 * e; a.op = 1 - t * t * t;
+      poserF(a);
+    }, () => { a.el.remove(); enVol--; S.jouer("pose", 0.7); if (ouvert) majBascules(); });
+    C.dire("Page sortie sur le bureau", { libelle: "Annuler", action() { remettre(pg, cl, i); } });
+    return true;
+  };
+  // bouton « Jeter » ou touche Suppr : la page file dans la corbeille (rien n'est détruit)
+  K.jeterPage = function (i) {
+    if (i === undefined) i = indexVu(choix);
+    const cl = k, d = P.donnees(), a = retirer(i); if (!a) return false;
+    const pg = a.pg;
+    d.corbeille.push(pg); P.sauver();
+    S.jouer("prise"); enVol++;
+    document.body.classList.add("porte", "corb-haut");
+    const x0 = a.x, y0 = a.y, cx = innerWidth / 2, cy = elCorb.offsetTop + elCorb.offsetHeight / 2, r1 = (a.gauche ? 1 : -1) * 9;
+    U.anim(400, (t) => {
+      const e = U.douce2(t);
+      a.x = U.melange(x0, cx, e); a.y = U.melange(y0, cy, e) - Math.sin(Math.PI * t) * 18; a.ech = U.melange(1, 0.1, e); a.r = r1 * e; a.op = 1 - t * t * t * t;
+      if (t > 0.5) elCorb.classList.add("chaud");
+      poserF(a);
+    }, () => {
+      a.el.remove(); enVol--; S.jouer("feuille");
+      setTimeout(() => { if (enVol || arr || B.occupe()) return; elCorb.classList.remove("chaud"); document.body.classList.remove("porte", "corb-haut"); }, 260);
+      if (ouvert) majBascules();
+    });
+    C.dire(pg.type === "photo" || pg.image ? "Photo jetée" : "Feuille jetée", { libelle: "Annuler", duree: 7000, action() { remettre(pg, cl, i); } });
+    return true;
+  };
+  // le classeur ouvert a changé ailleurs (Nova, un autre appareil) : on montre tout de suite ses vraies pages
+  K.rafraichir = function () {
+    if (!ouvert || !k || anime || ptr || arr || pf) return false;
+    if (P.donnees().objets.indexOf(k) < 0) { if (!fouille.hidden) fermerFouille(); K.fermer(); return true; }
+    if (signature() === vues0) return false;
+    poserTout(); s = U.borne(s, 0, maxS()); k.s = s;
+    if (document.activeElement !== titre) titre.value = k.nom;
+    couvNom.textContent = k.nom;
+    majStatiques(); precharger();
+    if (!fouille.hidden) construire();
+    return true;
+  };
+  K.pastilles = () => past.map((p) => (p.el.hidden ? null : { i: p.i, choisie: p.el.classList.contains("choisie"), court: p.el.classList.contains("court"), rect: p.el.getBoundingClientRect().toJSON() }));
 
   function creerFeuillet() {
     const e = U.el("div", "feuillet", livre), f = { el: e, j: 0, p: new U.Ressort(0, 140, 22), bandes: [], retard: 0, tenu: false };

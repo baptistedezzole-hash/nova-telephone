@@ -821,6 +821,9 @@
     const v = i.verif && typeof i.verif === "object" ? i.verif : {};
     const r = { sha, mime: "image/vnd.cartable.partition", mesures: nb(i.mesures, 5000), notes: nb(i.notes, 100000), confiance: nb(i.confiance, 1), moteur: tx(i.moteur, 40), titre: tx(i.titre, 120), lu: Date.now(),
       verif: { etat: ["verifie", "attente", "sautee"].includes(v.etat) ? v.etat : undefined, corrections: nb(v.corrections, 5000) } };
+    if (["morceau", "exercices"].includes(i.mode)) r.mode = i.mode;
+    if (Array.isArray(i.sections)) r.sections = i.sections.slice(0, 200).map((x) => (x && typeof x === "object" && nb(x.a, 5000) !== undefined && nb(x.b, 5000) !== undefined
+      ? { n: nb(x.n, 500), a: nb(x.a, 5000), b: nb(x.b, 5000), titre: tx(x.titre, 80) || "" } : null)).filter(Boolean);
     for (const k of Object.keys(r)) if (r[k] === undefined) delete r[k];
     for (const k of Object.keys(r.verif)) if (r.verif[k] === undefined) delete r.verif[k];
     return r;
@@ -939,6 +942,13 @@
           const pr = propreDeNova(cmd);
           if (pr) { c.mettreAuPropre(r.id, pr, typeof cmd.texte === "string" ? cmd.texte : undefined); c.modifier(r.id, { ext_voirPropre: true }); }
           r.dit = "« " + (cmd.titre || "Photo") + " » ajoutée" + (cmd.dans ? " dans « " + cmd.dans + " »" + (r.classeurCree ? " (classeur créé)" : "") : "") + (pr ? ", mise au propre, original gardé." : ".");
+          break;
+        }
+        case "partition-jouer": {                             // « joue la section 3 de … » : l'interface ouvre la page et joue (surNova)
+          const o = trouverOuErreur(cmd.quoi, "feuille"); r.id = o.id;
+          if (!o.propre || !o.propre.partition) throw new Error("cette feuille n'est pas une partition lue");
+          if (!auditeursNova.size) throw new Error("ouvre le cartable pour jouer la partition");
+          r.dit = "Je joue" + (cmd.section ? " la section « " + String(cmd.section).slice(0, 40) + " »" : " la partition") + ".";
           break;
         }
         case "partition-maj": {                               // la vérification a corrigé le MusicXML : on remplace le blob (l'original et la photo ne bougent pas)

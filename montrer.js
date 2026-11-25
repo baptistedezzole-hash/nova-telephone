@@ -54,6 +54,10 @@
 #montre .msg { position:absolute; z-index:1; left:50%; top:50%; transform:translate(-50%,-50%); max-width:min(84vw,380px); padding:14px 18px; border-radius:14px;
   background:rgba(10,14,30,.88); border:1px solid rgba(255,255,255,.12); font-size:14px; line-height:1.4; text-align:center; display:none; }
 #montre .msg.vu { display:block; }
+#montre .msg .gros { display:block; margin:14px auto 2px; min-width:220px; padding:16px 22px; border-radius:16px; border:1px solid rgba(233,214,168,.7);
+  background:linear-gradient(135deg,#e9d6a8,#f0b6c8); color:#0b0d16; font:700 18px/1.2 var(--sans,system-ui,sans-serif); text-decoration:none;
+  box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 26px rgba(233,214,168,.25); cursor:pointer; }
+#montre .msg .gros small { display:block; margin-top:5px; font:500 12px/1.2 var(--mono,ui-monospace,monospace); opacity:.7; }
 #montre .mot { position:absolute; z-index:3; top:calc(env(safe-area-inset-top,0px) + 50px); right:calc(10px + env(safe-area-inset-right,0px));
   width:min(calc(100vw - 32px),340px); padding:10px; border-radius:16px; background:rgba(10,13,26,.95); border:1px solid rgba(233,214,168,.22);
   box-shadow:0 12px 40px rgba(0,0,0,.55),0 0 30px rgba(233,214,168,.06); display:none; box-sizing:border-box; }
@@ -306,6 +310,26 @@
     try { toast(neufs.length > 1 ? "🔗 " + neufs.length + " liens dans le fil : touche une carte" : "🔗 Lien reçu : touche la carte pour l'ouvrir", 4200); } catch (x) {}
   }
 
+  // 2026-11-25 secours du panneau : gros bouton « Ouvrir le lien » (navigateur / appli du site) ou « Réessayer »
+  function boutonLien(url, titre, reessayer) {
+    msg.textContent = "";
+    const t = document.createElement("div");
+    t.textContent = url ? "Ce site ne s'affiche pas dans Nova." : "La page ne charge pas.";
+    msg.appendChild(t);
+    const b = document.createElement(url ? "a" : "button");
+    b.className = "gros";
+    if (url) {
+      b.href = url; b.target = "_blank"; b.rel = "noopener noreferrer";
+      b.textContent = "🔗 Ouvrir le lien";
+      const s = document.createElement("small");
+      try { s.textContent = new URL(url).hostname.replace(/^www\./, ""); } catch (x) {}
+      b.appendChild(s);
+      b.onclick = () => setTimeout(fermer, 300);
+    } else { b.type = "button"; b.textContent = "↻ Réessayer"; b.onclick = () => reessayer && reessayer(); }
+    msg.appendChild(b);
+    msg.classList.add("vu");
+  }
+
   async function ouvrir(p, main) {
     if (!p) return;
     if (p.type === "lien") { if (okLien(p.url)) { marquerLien(p.id); window.open(p.url, "_blank", "noopener,noreferrer"); } return; }
@@ -323,7 +347,10 @@
       if (!r.ok) return n === ticket && dire(r.status === 401 ? "Reconnecte l'appli au PC (scanne le QR code), puis réessaie." :
         r.status === 404 ? "Ce n'est plus sur le PC." : "Le PC ne répond pas.");
     } catch (x) { return n === ticket && dire("Le PC ne répond pas."); }
-    if (n !== ticket || !d || typeof d.url !== "string" || !/^\/montre\/[A-Za-z0-9_-]{43}\//.test(d.url)) return;
+    if (n !== ticket) return;
+    // 2026-11-25 une adresse d'un autre site (Back Market…) refuse d'être dans un cadre : jamais d'attente, un gros bouton
+    if (d && typeof d.url === "string" && okLien(d.url) && !okUrl(d.url)) { boutonLien(d.url, d.titre || p.titre); return; }
+    if (!d || typeof d.url !== "string" || !/^\/montre\/[A-Za-z0-9_-]{43}\//.test(d.url)) return dire("Rien à afficher ici.");
     ouvert = Object.assign({}, p, { taille: Array.isArray(d.taille) ? d.taille : null, paysage: !!d.paysage, type: d.type });
     const src = (NA.base || "") + d.url;
     if (okUrl(d.dl)) poserActions(d, src);
@@ -343,8 +370,11 @@
       vue.setAttribute("allow", "autoplay; fullscreen");
       vue.referrerPolicy = "no-referrer";
       vue.title = p.titre || "Page";
-      vue.onload = () => { if (n === ticket) dire(""); };
+      let charge = false;
+      vue.onload = () => { charge = true; if (n === ticket) dire(""); };
       vue.src = src;
+      // 2026-11-25 jamais bloqué sur « Ça arrive… » : 8 s sans chargement = on le dit, avec de quoi réessayer
+      setTimeout(() => { if (n === ticket && !charge) boutonLien(null, p.titre, () => ouvrir(p, true)); }, 8000);
     }
     scene.appendChild(vue);
     disposer();
@@ -386,7 +416,7 @@
     if (enCours || Date.now() < pause || document.visibilityState !== "visible") return;
     enCours = true;
     try {
-      const r = await fetch("/api/montrer/liste", { cache: "no-store" });
+      const r = await fetch("/api/montrer/liste?liens=1", { cache: "no-store" });
       if (r.status === 404) { pause = Date.now() + 60000; return; }   // PC pas encore à jour : on se tait
       if (!r.ok) return;
       const d = await r.json();
