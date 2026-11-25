@@ -48,7 +48,7 @@
   function garnirClasseur(v) {
     const o = v.o;
     U.el("div", "feuilles", v.corps);
-    const couv = U.el("div", "couv", v.corps);
+    const couv = v.couv = U.el("div", "couv", v.corps);
     couv.style.backgroundColor = o.couleur;
     U.el("div", "dos", couv);
     const et = U.el("div", "etiq", couv);
@@ -61,6 +61,8 @@
     v.nom.textContent = v.o.nom;
     v.compte.textContent = n === 0 ? "vide" : n + (n > 1 ? " pages" : " page");
     v.corps.style.setProperty("--ep", U.borne(2 + n * 0.5, 2, 9) + "px");
+    const c = v.o.couv || "";                                             // couverture choisie (image), sinon le cuir d'origine
+    if (v.couvVue !== c) { v.couvVue = c; v.couv.style.backgroundImage = c ? `url("${c}")` : ""; v.couv.classList.toggle("image", !!c); }
   };
   B.repeindre = function (v) {
     if (!v.toile) return;
@@ -210,6 +212,8 @@
       const w = monde(p.x, p.y);
       p.k = "objet"; p.v = v; p.gx = w.x - v.o.x; p.gy = w.y - v.o.y;
       v.vx = v.vy = 0;                                                    // on arrête net un objet qui glissait
+      if (e.pointerType !== "mouse" && v.o.type === "classeur")           // appui long (doigt, stylet) sans bouger : le menu du classeur
+        p.long = setTimeout(() => { if (ptrs.get(p.id) === p && !p.bouge) { ptrs.delete(p.id); B.menuClasseur(v, p.x, p.y); } }, 550);
     } else {
       p.k = "cam"; cam.vx = cam.vy = 0; cam.ancre = null; cam.zc = cam.z;
       const autres = Array.from(ptrs.values()).filter((q) => q.k === "cam");
@@ -228,7 +232,7 @@
     p.x = e.clientX; p.y = e.clientY; p.vit.noter(p.x, p.y);
     if (!p.bouge) {
       if (Math.hypot(p.x - p.x0, p.y - p.y0) < p.seuil) return;
-      p.bouge = true;
+      p.bouge = true; clearTimeout(p.long);
       if (p.k === "objet") prendre(p.v, p);
     }
     if (p.k === "objet") { survol(p, p.v); lancer(); }
@@ -241,7 +245,7 @@
   });
   function fin(e, annule) {
     const p = ptrs.get(e.pointerId); if (!p) return;
-    ptrs.delete(p.id);
+    ptrs.delete(p.id); clearTimeout(p.long);
     if (p.k === "objet") {
       if (p.bouge) lacher(p.v, p);
       else if (!annule) { B.selection = p.v; if (B.surToucher) B.surToucher(p.v); }
@@ -261,7 +265,113 @@
     cam.zc = U.borne(cam.zc * Math.exp(-e.deltaY * (e.ctrlKey ? 0.012 : 0.0016)), zmin(), 2.2);
     cam.vx = cam.vy = 0; lancer();
   }, { passive: false });
-  elB.addEventListener("contextmenu", (e) => e.preventDefault());
+  elB.addEventListener("contextmenu", (e) => {                             // clic droit sur un classeur : son menu
+    e.preventDefault();
+    const el = e.target.closest ? e.target.closest(".objet") : null, v = el && el.__vue;
+    if (v && v.o.type === "classeur") B.menuClasseur(v, e.clientX, e.clientY);
+  });
+
+  // ---------- la couverture d'un classeur : clic droit ou appui long, puis « Changer la couverture » ----------
+  let elMenu = null, elGal = null;
+  const ICONES = {
+    ouvrir: '<svg viewBox="0 0 24 24"><path d="M4 6h7v13H4zM13 6h7v13h-7z"/></svg>',
+    couv: '<svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM5 15l4-4 4 4 3-3 3 3M15.5 8.5h.01"/></svg>',
+    origine: '<svg viewBox="0 0 24 24"><path d="M8 5L4 9l4 4M4 9h10a5 5 0 010 10h-3"/></svg>',
+    fichier: '<svg viewBox="0 0 24 24"><path d="M4 6h6l2 2h8v11H4zM12 11v5M9.5 13.5L12 11l2.5 2.5"/></svg>',
+  };
+  function fermerMenu() { if (!elMenu) return; const m = elMenu; elMenu = null; m.classList.remove("la"); setTimeout(() => m.remove(), 180); }
+  B.menuClasseur = function (v, x, y) {
+    if (!v || v.o.type !== "classeur" || v.vol || elGal || vues.get(v.o.id) !== v) return;
+    fermerMenu();
+    B.selection = v; S.jouer("prise");
+    const m = elMenu = U.el("div", "", document.body);
+    m.id = "menu-classeur";
+    m.innerHTML = `<button data-a="ouvrir">${ICONES.ouvrir}<span>Ouvrir</span></button><button data-a="couv">${ICONES.couv}<span>Changer la couverture</span></button>` +
+      (v.o.couv ? `<button data-a="origine">${ICONES.origine}<span>Couverture d'origine</span></button>` : "");
+    const l = m.offsetWidth, h = m.offsetHeight, gx = x + l + 10 > vw, gy = y + h + 10 > vh;      // toujours dans l'écran
+    m.style.left = U.borne(gx ? x - l : x, 8, Math.max(8, vw - l - 8)) + "px";
+    m.style.top = U.borne(gy ? y - h : y, 8, Math.max(8, vh - h - 8)) + "px";
+    m.style.transformOrigin = (gx ? "100%" : "0") + " " + (gy ? "100%" : "0");
+    requestAnimationFrame(() => m.classList.add("la"));
+    m.addEventListener("contextmenu", (e) => e.preventDefault());
+    m.addEventListener("click", (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      fermerMenu();
+      if (b.dataset.a === "ouvrir") { if (B.surToucher) B.surToucher(v); }
+      else if (b.dataset.a === "couv") B.couvertures(v);
+      else poserCouverture(v, null);
+    });
+  };
+  addEventListener("pointerdown", (e) => { if (elMenu && !elMenu.contains(e.target)) fermerMenu(); }, true);
+  addEventListener("keydown", (e) => {                                     // la galerie et le menu prennent le clavier tant qu'ils sont là
+    if (!elMenu && !elGal) return;
+    if (e.target && e.target.tagName === "INPUT") return;
+    e.stopPropagation();
+    if (e.key === "Escape") { e.preventDefault(); if (elMenu) fermerMenu(); else B.fermerCouvertures(); }
+  }, true);
+  async function poserCouverture(v, choix) {
+    try { await P.couverture(v.o, choix); }
+    catch (e) { console.error(e); if (C.dire) C.dire("La couverture n'a pas pu être posée."); return false; }
+    if (vues.get(v.o.id) !== v) return true;
+    B.majClasseur(v);
+    v.couv.classList.remove("neuve"); void v.couv.offsetWidth; v.couv.classList.add("neuve");     // un éclat, et le classeur sursaute
+    devant(v); B.sursaut(v); S.jouer("classeur");
+    if (C.dire) C.dire(choix ? `Nouvelle couverture sur « ${v.o.nom} »` : `Couverture d'origine sur « ${v.o.nom} »`);
+    return true;
+  }
+  B.poserCouverture = poserCouverture;
+  B.couverturesOuvertes = () => !!elGal;
+  B.fermerCouvertures = function () {
+    const g = elGal; if (!g) return;
+    elGal = null; g.classList.remove("la");
+    setTimeout(() => { g.remove(); for (const u of g.__jetables || []) URL.revokeObjectURL(u); }, 260);
+  };
+  // la galerie : la couverture d'origine, les propositions rangées pour ce classeur, ou une image à soi
+  B.couvertures = async function (v) {
+    if (elGal || !v || v.o.type !== "classeur") return;
+    fermerMenu();
+    const g = elGal = U.el("div", "", document.body);
+    g.id = "couvertures";
+    g.innerHTML = '<div class="carte"><h2>Couverture de « <b></b> »</h2><div class="choix"></div>' +
+      `<div class="bas"><button data-a="fichier">${ICONES.fichier}<span>Une image à moi</span></button><button class="ok" data-a="fermer">Fermer</button></div></div>`;
+    g.querySelector("h2 b").textContent = v.o.nom;
+    const choix = g.querySelector(".choix");
+    const livre = (classe, texte, i) => {
+      const b = U.el("button", "livre " + classe, choix);
+      b.innerHTML = '<i class="dos"></i><i class="etiq"><b></b></i><i class="reflet"></i><span></span>';
+      b.querySelector(".etiq b").textContent = v.o.nom; b.querySelector("span").textContent = texte;
+      b.style.animationDelay = i * 45 + "ms";
+      return b;
+    };
+    const o = livre("origine" + (v.o.couv ? "" : " choisi"), "D'origine", 0);
+    o.style.backgroundColor = v.o.couleur; o.dataset.a = "origine";
+    const attente = U.el("p", "attente", choix); attente.textContent = "Je sors les couvertures…";
+    requestAnimationFrame(() => g.classList.add("la"));
+    let liste = [];
+    g.addEventListener("contextmenu", (e) => e.preventDefault());
+    g.addEventListener("click", async (e) => {
+      if (e.target === g) return B.fermerCouvertures();
+      const b = e.target.closest("button"); if (!b || g !== elGal) return;
+      const a = b.dataset.a;
+      if (a === "fermer") return B.fermerCouvertures();
+      if (a === "fichier") { const img = await P.choisirImage(); if (img && g === elGal) { B.fermerCouvertures(); poserCouverture(v, { image: img }); } return; }
+      if (b.classList.contains("occupe")) return;
+      for (const x of choix.querySelectorAll(".livre")) x.classList.toggle("choisi", x === b);
+      b.classList.add("occupe");                                            // l'image vient du disque : le classeur choisi palpite en attendant
+      const fait = await poserCouverture(v, a === "origine" ? null : liste[+b.dataset.i]);
+      b.classList.remove("occupe");
+      if (fait && g === elGal) B.fermerCouvertures();
+    });
+    try { liste = await P.couvertures(v.o.nom); } catch (e) { liste = []; }
+    g.__jetables = liste.filter((c) => c.jetable).map((c) => c.url);
+    if (g !== elGal) { for (const u of g.__jetables) URL.revokeObjectURL(u); return; }
+    attente.remove();
+    liste.forEach((c, i) => {
+      const b = livre("image", String(i + 1), i + 1);
+      b.style.backgroundImage = `url("${c.url}")`; b.dataset.i = i; b.title = c.nom;
+    });
+    if (!liste.length) { const p = U.el("p", "attente", choix); p.textContent = "Pas encore de proposition pour ce classeur : prends une image à toi, ou demande des idées de couverture à Nova."; }
+  };
 
   // ---------- l'interface du bureau ----------
   B.init = function (d) { for (const v of Array.from(vues.values())) oter(v); for (const o of d.objets) creerVue(o); appliquerCam(); };

@@ -289,8 +289,26 @@
     return L;
   }
 
+  // 2026-11-25 liens envoyés par le PC (telephone.py lien) : une carte cliquable dans le fil, jamais le panneau
+  const okLien = u => { try { const x = new URL(u); return (x.protocol === "https:" || x.protocol === "http:") && !!x.hostname; } catch (e) { return false; } };
+  const marquerLien = id => { noterVu(id); fetch("/api/montrer/ouvrir", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).catch(() => {}); };
+  function deposerLiens() {
+    const vus = vusTous();
+    const neufs = partages.filter(p => p.type === "lien" && okLien(p.url) && !vus.includes(p.id) && Date.now() - p.t * 1000 < RECENT).sort((x, y) => x.t - y.t);
+    if (!neufs.length || typeof afficher !== "function") return;
+    for (const p of neufs) {
+      const titre = String(p.titre || "").replace(/[\[\]\n]/g, " ").trim() || "Ouvrir le lien";
+      try { afficher({ id: "lien-" + p.id, qui: "nova", conv: "nova", texte: "[" + titre + "](" + p.url + ")" }); } catch (x) {}
+      marquerLien(p.id);
+    }
+    try { if (window.NovaHisto && !NovaHisto.ouvert()) NovaHisto.basculer(true, true); } catch (x) {}
+    try { vib([12, 60, 12]); } catch (x) {}
+    try { toast(neufs.length > 1 ? "🔗 " + neufs.length + " liens dans le fil : touche une carte" : "🔗 Lien reçu : touche la carte pour l'ouvrir", 4200); } catch (x) {}
+  }
+
   async function ouvrir(p, main) {
     if (!p) return;
+    if (p.type === "lien") { if (okLien(p.url)) { marquerLien(p.id); window.open(p.url, "_blank", "noopener,noreferrer"); } return; }
     const n = ++ticket;
     fermerVue(); ticket = n;
     ouvert = p; rot = null; noterVu(p.id);
@@ -347,7 +365,7 @@
       const b = document.createElement("button");
       if (ouvert && ouvert.id === p.id) b.className = "ici";
       b.textContent = p.titre || "Sans titre";
-      const genre = p.type === "fichier" ? ({ pdf: "PDF", audio: "Son", video: "Vidéo", texte: "Texte" }[p.genre] || "Fichier") : p.type === "image" ? "Image" : "Page";
+      const genre = p.type === "fichier" ? ({ pdf: "PDF", audio: "Son", video: "Vidéo", texte: "Texte" }[p.genre] || "Fichier") : p.type === "image" ? "Image" : p.type === "lien" ? "Lien" : "Page";
       const s = document.createElement("small"); s.textContent = genre + " · " + heure(p.t); b.appendChild(s);
       b.onclick = () => ouvrir(p, true);
       items.appendChild(b);
@@ -359,7 +377,7 @@
     if (document.visibilityState !== "visible") return;
     const bur = $("bur"); if (bur && bur.classList.contains("vu")) return;   // la prise en main du PC passe avant
     const vus = vusTous();
-    const a = partages.filter(p => !vus.includes(p.id) && Date.now() - p.t * 1000 < RECENT).sort((x, y) => x.t - y.t)[0];
+    const a = partages.filter(p => p.type !== "lien" && !vus.includes(p.id) && Date.now() - p.t * 1000 < RECENT).sort((x, y) => x.t - y.t)[0];
     if (a) ouvrir(a, false);
   }
 
@@ -374,7 +392,8 @@
       const d = await r.json();
       partages = Array.isArray(d.partages) ? d.partages.filter(p => p && typeof p.id === "string") : [];
       // 2026-11-25 un envoi qui arrive pendant qu'autre chose est ouvert : petite pastille (pas d'interruption)
-      if (connus && ouvert) { const nv = partages.find(p => !connus.has(p.id) && Date.now() - p.t * 1000 < RECENT); if (nv) annoncer("✦ Nouveau : « " + (nv.titre || "envoi") + " » (touche ✦ dans la barre)", 4200); }
+      deposerLiens();   // 2026-11-25 un lien reçu : carte dans le fil + petit avis (même si un panneau est ouvert)
+      if (connus && ouvert) { const nv = partages.find(p => p.type !== "lien" && !connus.has(p.id) && Date.now() - p.t * 1000 < RECENT); if (nv) annoncer("✦ Nouveau : « " + (nv.titre || "envoi") + " » (touche ✦ dans la barre)", 4200); }
       connus = new Set(partages.map(p => p.id));
       if (Array.isArray(d.vus)) {   // PC à jour : son état fait foi (sans écraser une ouverture toute fraîche pas encore notée)
         srv = { vus: d.vus.filter(x => typeof x === "string"), dernier: typeof d.dernier === "string" ? d.dernier : null, connu: true };

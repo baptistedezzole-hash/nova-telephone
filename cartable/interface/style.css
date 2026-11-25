@@ -247,6 +247,59 @@ body.porte #corbeille { transform: translate(-50%, 0); opacity: 1; }
 #aide .ok:active { transform: scale(0.94); }
 body.tactile li.pc { display: none; }
 
+/* ---------------- la couverture d'un classeur : image choisie, menu (clic droit, appui long), galerie ---------------- */
+.objet.classeur .couv.image, #classeur .couverture .ext.image, #couvertures .livre.image { background-size: cover; background-position: center; background-blend-mode: normal; }
+.objet.classeur .couv.neuve { animation: couv-neuve 0.7s ease-out; }
+@keyframes couv-neuve { 0% { filter: brightness(2.1) saturate(1.4); } 100% { filter: none; } }
+#menu-classeur { position: fixed; z-index: 70; min-width: 216px; padding: 6px; border-radius: 14px; background: var(--panneau, #2b1c10); color: var(--clair, #fff3dc);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255, 240, 210, 0.14); opacity: 0; transform: scale(0.82);
+  transition: transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2), opacity 0.14s; }
+#menu-classeur.la { opacity: 1; transform: none; }
+#menu-classeur button { display: flex; align-items: center; gap: 11px; width: 100%; padding: 11px 14px 11px 11px; border-radius: 10px; color: inherit; font-size: 15px; text-align: left; white-space: nowrap; transition: background 0.12s, transform 0.12s; }
+#menu-classeur button:hover { background: rgba(255, 240, 210, 0.12); }
+#menu-classeur button:active { transform: scale(0.96); background: rgba(255, 240, 210, 0.2); }
+#menu-classeur svg, #couvertures .bas svg { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+body.tactile #menu-classeur button { padding: 14px 16px 14px 12px; font-size: 16px; }
+#couvertures { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; background: rgba(16, 9, 4, 0.66); opacity: 0; transition: opacity 0.22s; }
+#couvertures.la { opacity: 1; }
+#couvertures .carte { width: min(960px,calc(100vw - 28px)); max-height: calc(100vh - 28px); overflow: auto; padding: 22px 26px 18px; border-radius: 18px; color: #3a2a1c;
+  background: linear-gradient(#fcf7ea, #f1e7d1); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); touch-action: pan-y;
+  transform: translateY(22px) scale(0.95); transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+#couvertures.la .carte { transform: none; }
+#couvertures h2 { margin: 0 0 16px; font: 600 23px "Segoe Print", "Segoe UI", sans-serif; }
+#couvertures .choix { display: flex; flex-wrap: wrap; gap: 20px 18px; justify-content: center; padding: 4px 2px 20px; }
+#couvertures .livre { position: relative; width: 132px; height: 174px; flex: none; border-radius: 3px 7px 7px 3px; overflow: hidden; background-color: #6b4a2e;
+  background-image: url(textures/cuir.jpg); background-size: 180px; background-blend-mode: overlay;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.42), inset 0 0 0 1px rgba(255, 255, 255, 0.12), inset 0 -14px 22px rgba(0, 0, 0, 0.22);
+  animation: monte 0.34s cubic-bezier(0.2, 0.9, 0.3, 1.2) backwards; transition: transform 0.16s cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 0.16s; }
+#couvertures .livre:hover { transform: translateY(-6px) rotate(-1.2deg); box-shadow: 0 16px 28px rgba(0, 0, 0, 0.48), inset 0 0 0 1px rgba(255, 255, 255, 0.12); }
+#couvertures .livre:active { transform: scale(0.95); }
+#couvertures .livre.choisi { box-shadow: 0 0 0 3px #fcf7ea, 0 0 0 6px var(--accent, #e8a64c), 0 12px 24px rgba(0, 0, 0, 0.45); }
+#couvertures .livre.occupe { animation: palpite 0.7s ease-in-out infinite; }
+@keyframes palpite { 50% { transform: scale(0.96); filter: brightness(1.25); } }
+#couvertures .livre .dos { position: absolute; left: 0; top: 0; bottom: 0; width: 17px;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.34), rgba(0, 0, 0, 0.12) 60%, rgba(255, 255, 255, 0.10) 88%, rgba(0, 0, 0, 0.28)); border-right: 1px dashed rgba(255, 240, 210, 0.28); }
+#couvertures .livre .etiq { left: 30px; right: 13px; top: 30px; padding: 6px 5px 5px; }
+#couvertures .livre .etiq b { font-size: 11px; }
+#couvertures .livre .reflet { position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(118deg, rgba(255, 255, 255, 0.20), rgba(255, 255, 255, 0) 34%, rgba(255, 255, 255, 0) 70%, rgba(0, 0, 0, 0.16)); }
+#couvertures .livre span { position: absolute; left: 50%; bottom: 9px; transform: translateX(-50%); min-width: 28px; padding: 4px 10px; border-radius: 15px; white-space: nowrap;
+  background: rgba(28, 16, 8, 0.82); color: #fff3dc; font: 600 13px "Segoe UI", sans-serif; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4); }
+#couvertures .attente { flex: 1 1 220px; align-self: center; max-width: 380px; margin: 0; color: #7a6248; font-size: 14.5px; line-height: 1.45; }
+#couvertures .bas { display: flex; align-items: center; gap: 12px; }
+#couvertures .bas button { display: flex; align-items: center; gap: 9px; padding: 10px 18px; border-radius: 22px; font-weight: 600; color: #5a3a22; box-shadow: inset 0 0 0 1.5px rgba(90, 58, 34, 0.5); transition: transform 0.12s, background 0.12s; }
+#couvertures .bas button:hover { background: rgba(90, 58, 34, 0.08); }
+#couvertures .bas button:active { transform: scale(0.94); }
+#couvertures .bas .ok { margin-left: auto; padding: 10px 24px; background: #5a3a22; color: #fff3dc; box-shadow: none; }
+#couvertures .bas .ok:hover { background: #6b472b; }
+body.etroit #couvertures .carte { padding: 18px 14px 14px; }
+body.etroit #couvertures h2 { font-size: 19px; }
+body.etroit #couvertures .choix { gap: 14px 12px; }
+body.etroit #couvertures .livre { width: 100px; height: 132px; }
+body.etroit #couvertures .livre .dos { width: 13px; }
+body.etroit #couvertures .livre .etiq { left: 22px; right: 9px; top: 20px; padding: 4px 3px; }
+body.etroit #couvertures .livre .etiq b { font-size: 9px; }
+
 #messages { position: fixed; z-index: 90; left: 50%; bottom: calc(132px + var(--bas)); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; width: max-content; max-width: calc(100vw - 20px); }
 .msg { display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 18px; border-radius: 24px; background: rgba(28, 17, 9, 0.94); border: 1px solid var(--trait); color: #fff3dc;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); pointer-events: auto; opacity: 0; transform: translateY(12px) scale(0.96); transition: opacity 0.22s, transform 0.26s cubic-bezier(0.2, 0.9, 0.3, 1.3); }

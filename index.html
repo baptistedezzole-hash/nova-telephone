@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="37ee00be5f8328a5">
+<meta name="nova-version" content="4401375fd35ce410">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -469,6 +469,17 @@ html.saisieHaut #app { bottom: 0; padding-top: calc(var(--st) + 70px); }
 .hb.info { align-self: center; max-width: 92%; padding: 4px 10px; font-size: 12.5px; color: var(--txt3); text-align: center; }
 .hb.joue { border-color: rgba(243, 166, 208, .55); color: #fff; }
 .hb.neuf { animation: hbEntre .45s var(--ressort); }
+/* 2026-11-25 liens cliquables : une carte (icône, texte, domaine en petit) */
+a.lien { display: flex; align-items: center; gap: 10px; margin: 6px 0 2px; padding: 9px 11px; border-radius: 13px; text-decoration: none;
+  white-space: normal; color: var(--txt); background: linear-gradient(135deg, rgba(233, 214, 168, .1), rgba(243, 166, 208, .07));
+  border: 1px solid rgba(233, 214, 168, .32); -webkit-tap-highlight-color: transparent; transition: transform .15s, border-color .2s; }
+a.lien:active { transform: scale(.97); border-color: rgba(243, 166, 208, .6); }
+a.lien .lienIc { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; font-size: 16px;
+  background: rgba(233, 214, 168, .14); }
+a.lien .lienCo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+a.lien .lienCo b { font-weight: 600; font-size: 14.5px; line-height: 1.3; color: var(--or); overflow-wrap: anywhere; }
+a.lien .lienCo small { font-size: 11.5px; color: var(--txt3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.lien .lienFl { flex: none; font-size: 22px; line-height: 1; color: var(--or); opacity: .7; }
 /* 2026-11-23 fiable : état discret d'un message écrit ici */
 .hb.loc-attente, .msg.loc-attente { opacity: .62; }
 .hb.loc-attente::after, .msg.loc-attente::after { content: " ⏳"; font-size: 11px; }
@@ -1442,7 +1453,7 @@ function nettoyerTel(t) {
 }
 const cleFil = t => String(t || "").toLowerCase().replace(/[*_`#]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim().slice(0, 120);
 // Le **gras** de Nova : uniquement des nœuds texte et <strong>, donc aucun HTML du message n'est jamais interprété.
-function poserTexte(n, t) {
+function poserGras(n, t) {
   const R = /\*\*(\S(?:[^\n]*?\S)?)\*\*/g; let i = 0, m;
   while ((m = R.exec(t))) {
     if (m.index > i) n.appendChild(document.createTextNode(t.slice(i, m.index)));
@@ -1450,6 +1461,37 @@ function poserTexte(n, t) {
   }
   if (i < t.length) n.appendChild(document.createTextNode(t.slice(i)));
 }
+// 2026-11-25 liens cliquables : [texte](https://…) ou une adresse nue deviennent une carte qui ouvre la page
+// (navigateur du tel, ou l'appli Android du site). Seulement http/https, jamais de HTML interprété.
+const RE_LIEN = /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>"'`\]\)]+)/gi;
+function urlSure(u) {
+  try { const x = new URL(u); return (x.protocol === "https:" || x.protocol === "http:") && x.hostname ? x : null; } catch (e) { return null; }
+}
+function carteLien(texte, x) {
+  const a = document.createElement("a");
+  a.className = "lien"; a.href = x.href; a.target = "_blank"; a.rel = "noopener noreferrer";
+  const ic = el("span", "lienIc", "🔗"), co = el("span", "lienCo");
+  const dom = x.hostname.replace(/^www\./, "");
+  let chemin = ""; try { chemin = decodeURIComponent(x.pathname).replace(/^\/+|\/+$/g, ""); } catch (e) { chemin = x.pathname.slice(1); }
+  co.appendChild(el("b", "", texte || dom)); co.appendChild(el("small", "", texte ? dom : (chemin ? "/" + chemin : "ouvrir la page")));
+  a.appendChild(ic); a.appendChild(co); a.appendChild(el("span", "lienFl", "›"));
+  a.addEventListener("click", ev => { ev.stopPropagation(); try { vib(8); } catch (e) {} });
+  return a;
+}
+function poserTexte(n, t) {
+  t = String(t || ""); RE_LIEN.lastIndex = 0; let i = 0, m;
+  while ((m = RE_LIEN.exec(t))) {
+    let brut = m[0], titre = m[1] || "", u = m[2] || m[3];
+    if (m[3]) { const r = u.match(/[.,;:!?…»]+$/); if (r) { u = u.slice(0, -r[0].length); brut = u; } }
+    const x = urlSure(u);
+    if (!x) continue;
+    if (m.index > i) poserGras(n, t.slice(i, m.index));
+    n.appendChild(carteLien(titre.replace(/\*\*/g, "").trim(), x));
+    i = m.index + brut.length; RE_LIEN.lastIndex = i;
+  }
+  if (i < t.length) poserGras(n, t.slice(i));
+}
+const sansLiens = t => String(t || "").replace(/\[([^\]\n]{1,200})\]\((https?:\/\/[^\s)]+)\)/gi, "$1").replace(/https?:\/\/[^\s<>"'`]+/gi, "le lien");
 function afficher(e) {
   if (typeof e.texte === "string") { const n = nettoyerTel(e.texte); if (n.brut) e = Object.assign({}, e, { texte: n.texte, brut: true }); }
   if (e.mid && e.qui === "toi" && !e.loc && enAttente(e.mid)) e = Object.assign({}, e, { loc: "attente" });   // revenu du PC mais pas encore pris par Nova : il reste en attente
@@ -1475,12 +1517,13 @@ function afficher(e) {
   m.style.display = m.dataset.conv === conv ? "" : "none";
   m.innerHTML = "";
   if (e.qui !== "info") { const c = convs.find(x => x.id === m.dataset.conv); m.appendChild(el("span", "qui lbl", e.qui === "toi" ? "toi" : (m.dataset.conv === "nova" ? "Nova" : (c ? c.titre : "réponse")))); }
-  if (e.qui === "nova") poserTexte(m, e.texte); else m.appendChild(document.createTextNode(e.texte));
+  if (e.qui !== "info") poserTexte(m, e.texte); else m.appendChild(document.createTextNode(e.texte));
   m.dataset.kf = cleFil(e.texte); if (e.brut) m.dataset.vuBrut = "1";
   m.dataset.e = JSON.stringify({ texte: e.texte });
   while (fil.children.length > 120) { const x = fil.firstChild; entrees.forEach((v, k) => { if (v === x) entrees.delete(k); }); x.remove(); }
 }
 $("fil").addEventListener("click", ev => {   // toucher une réponse : la réécouter
+  if (ev.target.closest("a.lien")) return;   // un lien s'ouvre, il ne relit pas la bulle
   const m = ev.target.closest(".msg.nova"); if (!m) return;
   if (getSelection && String(getSelection()).length) return;
   deverrouillerSon(); arreterEcoute(); vib(8); relire(JSON.parse(m.dataset.e).texte, m);
@@ -1837,6 +1880,7 @@ async function lireAudios(id, texte, obtenir) {
 let relireN = 0;
 async function relire(texte, m) {
   const id = "relire-" + (++relireN);
+  texte = sansLiens(texte);   // 2026-11-25 jamais une adresse lue à voix haute
   if (m) m.classList.add("joue");
   await lireAudios(id, texte, () => api("/api/dire", { texte }));
   if (m) m.classList.remove("joue");
@@ -3007,7 +3051,7 @@ window.NovaHisto = (() => {
       if (!texte) return;
       const t = document.createElement("span"); t.textContent = texte; b.appendChild(t); return;
     }
-    if (x.qui === "nova") poserTexte(b, texte); else b.textContent = texte;
+    if (x.qui !== "info") poserTexte(b, texte); else b.textContent = texte;
   }
   function titre() {
     const c = (typeof convs !== "undefined" && convs.find(y => y.id === affichee)) || null;
@@ -3110,6 +3154,7 @@ window.NovaHisto = (() => {
     vis.firstElementChild.src = IMAGES_PLEINES.get(i.src) || i.src; vis.classList.add("vu");
   }, true);
   filH.addEventListener("click", ev => {   // toucher une réponse de Nova : la réécouter (comme dans « Le fil »)
+    if (ev.target.closest("a.lien")) return;   // 2026-11-25 un lien s'ouvre, il ne relit pas la bulle
     const b = ev.target.closest(".hb.nova"); if (!b) return;
     if (getSelection && String(getSelection()).length) return;
     const x = (listes.get(affichee) || []).find(y => y.id === b.dataset.id); if (!x) return;
