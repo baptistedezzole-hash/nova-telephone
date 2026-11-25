@@ -319,7 +319,7 @@
     const b = document.createElement(url ? "a" : "button");
     b.className = "gros";
     if (url) {
-      b.href = url; b.target = "_blank"; b.rel = "noopener noreferrer";
+      b.href = (window.NovaChrome && NovaChrome.href(url)) || url; b.target = "_blank"; b.rel = "noopener noreferrer";   // 2026-11-25 (2) vrai Chrome
       b.textContent = "🔗 Ouvrir le lien";
       const s = document.createElement("small");
       try { s.textContent = new URL(url).hostname.replace(/^www\./, ""); } catch (x) {}
@@ -332,7 +332,10 @@
 
   async function ouvrir(p, main) {
     if (!p) return;
-    if (p.type === "lien") { if (okLien(p.url)) { marquerLien(p.id); window.open(p.url, "_blank", "noopener,noreferrer"); } return; }
+    if (p.type === "lien") {   // 2026-11-25 (2) dans le vrai Chrome du téléphone (intent Android), sinon onglet normal
+      if (okLien(p.url)) { marquerLien(p.id); if (!(window.NovaChrome && NovaChrome.ouvrir(p.url))) window.open(p.url, "_blank", "noopener,noreferrer"); }
+      return;
+    }
     const n = ++ticket;
     fermerVue(); ticket = n;
     ouvert = p; rot = null; noterVu(p.id);

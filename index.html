@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="a92220b43036ca8d">
+<meta name="nova-version" content="f7c67078186ad5fa">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -1467,15 +1467,47 @@ const RE_LIEN = /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>
 function urlSure(u) {
   try { const x = new URL(u); return (x.protocol === "https:" || x.protocol === "http:") && x.hostname ? x : null; } catch (e) { return null; }
 }
+// 2026-11-25 (2) un toucher = le VRAI Chrome du téléphone (onglet normal, là où il est connecté), sans étape en plus.
+// Android (appli installée, onglet ou navigateur d'une appli) : lien intent:// vers com.android.chrome, ouvert en _blank
+// (si Chrome garde le lien chez lui, il s'ouvre dans un nouvel onglet, jamais à la place de Nova). Ailleurs : adresse normale.
+// Secours : si rien n'a quitté l'écran au bout de 2,5 s, la carte reprend l'adresse normale (2e toucher = ouvert ici).
+const estAndroid = () => { try { if (window.NovaAppli && NovaAppli.android != null) return !!NovaAppli.android; } catch (e) {} return /Android/i.test(navigator.userAgent || ""); };
+function hrefChrome(x, android) {
+  x = x && x.href ? urlSure(x.href) : urlSure(x);
+  if (!x) return "";
+  if (!android) return x.href;
+  return "intent://" + x.host + x.pathname + x.search + "#Intent;scheme=" + x.protocol.slice(0, -1) +
+    ";package=com.android.chrome;S.browser_fallback_url=" + encodeURIComponent(x.href) + ";end";
+}
+function surveillerSortie(a, x) {   // le lien intent n'a rien ouvert (pas de Chrome, appli qui bloque) : secours dans Nova
+  let parti = false; const vu = () => { parti = true; };
+  const ev = ["visibilitychange", "pagehide", "blur"];
+  ev.forEach(n => addEventListener(n, vu, { once: true })); document.addEventListener("visibilitychange", vu, { once: true });
+  setTimeout(() => {
+    ev.forEach(n => removeEventListener(n, vu)); document.removeEventListener("visibilitychange", vu);
+    if (parti || document.hidden || !a) return;
+    a.href = x.href; a.dataset.secours = "1";
+    try { toast("🔗 Chrome ne s'est pas ouvert : touche encore la carte pour l'ouvrir ici", 4200); } catch (e) {}
+  }, 2500);
+}
+function ouvrirChrome(u) {   // pour montrer.js / avoir.js : ouvre une adresse dans Chrome depuis un geste
+  const x = urlSure(u); if (!x) return false;
+  const a = document.createElement("a"); a.href = hrefChrome(x, estAndroid()); a.target = "_blank"; a.rel = "noopener noreferrer";
+  a.style.display = "none"; document.body.appendChild(a);
+  try { a.click(); } finally { setTimeout(() => a.remove(), 0); }
+  return true;
+}
+window.NovaChrome = { href: u => hrefChrome(u, estAndroid()), ouvrir: ouvrirChrome };
 function carteLien(texte, x) {
   const a = document.createElement("a");
-  a.className = "lien"; a.href = x.href; a.target = "_blank"; a.rel = "noopener noreferrer";
+  const android = estAndroid();
+  a.className = "lien"; a.href = hrefChrome(x, android); a.target = "_blank"; a.rel = "noopener noreferrer"; a.dataset.url = x.href;
   const ic = el("span", "lienIc", "🔗"), co = el("span", "lienCo");
   const dom = x.hostname.replace(/^www\./, "");
   let chemin = ""; try { chemin = decodeURIComponent(x.pathname).replace(/^\/+|\/+$/g, ""); } catch (e) { chemin = x.pathname.slice(1); }
   co.appendChild(el("b", "", texte || dom)); co.appendChild(el("small", "", texte ? dom : (chemin ? "/" + chemin : "ouvrir la page")));
   a.appendChild(ic); a.appendChild(co); a.appendChild(el("span", "lienFl", "›"));
-  a.addEventListener("click", ev => { ev.stopPropagation(); try { vib(8); } catch (e) {} });
+  a.addEventListener("click", ev => { ev.stopPropagation(); try { vib(8); } catch (e) {} if (android && !a.dataset.secours) surveillerSortie(a, x); });
   return a;
 }
 function poserTexte(n, t) {
