@@ -144,6 +144,7 @@
       else if (k === "+" || k === "=") K.ajouter();
       else if (k === "Home") K.aller(0);
       else if (k === "End") K.aller(9999);
+      else if (k === "Delete" || k === "Backspace") K.jeterPage();
       else if (!m && l === "p") { if (!K.basculerPropre()) return; }
       else return;
       return e.preventDefault();
@@ -227,7 +228,7 @@
       if (F.ouvert() || K.ouvert() || B.occupe()) return void setTimeout(refaire, 400);
       aRefaire = false; B.init(P.donnees());
     };
-    P.surChangement(() => { majSynchro(); aRefaire = true; refaire(); });
+    P.surChangement(() => { majSynchro(); if (K.ouvert()) K.rafraichir(); aRefaire = true; refaire(); });
     setInterval(majSynchro, 3000);
     brancherNova();
     document.body.classList.add("pret");

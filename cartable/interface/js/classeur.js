@@ -66,6 +66,7 @@
     else if (!double) compte.textContent = (s + 1) + " / " + n;
     else { const a = 2 * s, b = Math.min(n, 2 * s + 1); compte.textContent = (a < 1 ? "1" : b > a ? a + " – " + b : String(a)) + " / " + n; }
     q('[data-action="avant"]').disabled = s <= 0; q('[data-action="apres"]').disabled = s >= maxS();
+    vues0 = signature();
     majBascules();
   }
 
@@ -148,7 +149,7 @@
     past.forEach((p, c) => {
       const j = libre ? indexVu(c) : -1; p.i = j; p.el.hidden = j < 0;
       if (j < 0) return;
-      const photo = !!k.pages[j].image, enHaut = photo && pw < 440;        // une photo a déjà sa pastille en bas : sur petit écran, on monte
+      const photo = !!k.pages[j].image, enHaut = photo && pw < 470;       // une photo a déjà sa pastille en bas : sur petit écran, on monte
       p.el.classList.toggle("court", photo || pw < 460); p.el.classList.toggle("a-gauche", !c);
       p.el.classList.toggle("choisie", c === choix && indexVu(1 - c) >= 0);
       p.el.style.left = Math.round(c ? bx + 2 * pw - 12 : bx + 12) + "px"; p.el.style.top = Math.round(enHaut ? by + 10 : by + ph - 8) + "px";
@@ -415,13 +416,16 @@
     return true;
   };
   K.fermer = function () {
-    if (!ouvert || anime) return;
+    if (!ouvert || anime || arr) return;
     if (!fouille.hidden) return fermerFouille();
+    fermer(520);
+  };
+  function fermer(duree) {
     poserTout(); anime = true; k.s = s; el.classList.remove("la"); majBascules();
     if (document.activeElement === titre) titre.blur();
     const a = B.rectEcran(kv);
     S.jouer("classeur");
-    U.anim(520, (t) => {
+    U.anim(duree, (t) => {
       poseCouv(1 - U.douce2(Math.min(1, t / 0.8)));
       livre.style.transform = forme(a, 1 - U.douce2(U.borne((t - 0.25) / 0.75, 0, 1)));
       voile.style.opacity = (1 - t * t).toFixed(3);
@@ -429,8 +433,9 @@
       el.hidden = true; ouvert = false; anime = false; livre.style.transform = "";
       B.cacher(kv, false); B.majClasseur(kv); B.sursaut(kv); P.sauver(k);
       k = null; kv = null;
+      finFantome();
     });
-  };
+  }
   K.redimensionner = function () {
     if (!ouvert || anime) return;
     poserTout(); mesurer(); s = U.borne(s, 0, maxS()); majStatiques();
@@ -439,22 +444,32 @@
 
   // ---------- tirer une page, ou la toucher pour écrire dessus ----------
   scene.addEventListener("pointerdown", (e) => {
-    if (!ouvert || anime || ptr) return;
+    if (!ouvert || anime || ptr || arr || enVol) return;
     if (e.pointerType === "mouse" && e.button !== 0) return;
     e.preventDefault();
     try { scene.setPointerCapture(e.pointerId); } catch (x) { /* pointeur d'essai */ }
     const x = e.clientX, y = e.clientY;
-    ptr = { id: e.pointerId, x0: x, y0: y, bouge: false, vit: new U.Vitesse(), f: null, dehors: y < by - 14 || y > by + ph + 14 || x < (double ? bx : bx + pw) - 16 || x > bx + 2 * pw + 16 };
+    const p = ptr = { id: e.pointerId, x0: x, y0: y, bouge: false, vit: new U.Vitesse(), f: null, dehors: y < by - 14 || y > by + ph + 14 || x < (double ? bx : bx + pw) - 16 || x > bx + 2 * pw + 16 };
     ptr.vit.noter(x, y);
+    const cote = double && x < bx + pw ? 0 : 1;
+    p.i = p.dehors || vols.length ? -1 : indexVu(cote);
+    if (p.i >= 0) {
+      choisir(cote);
+      p.long = setTimeout(() => { if (ptr === p && !p.bouge && !p.f && ouvert && !anime && saisirPage(p.i, p.x0, p.y0)) p.pris = true; }, 380);   // appui long : la page se décolle
+    }
   });
+  scene.addEventListener("pointermove", (e) => { if (!ptr && !arr && ouvert && double && e.pointerType === "mouse") choisir(e.clientX < bx + pw ? 0 : 1); });
   addEventListener("pointermove", (e) => {
     if (!ptr || e.pointerId !== ptr.id) return;
     const x = e.clientX, dos = bx + pw;
     ptr.vit.noter(x, e.clientY);
+    if (ptr.pris) { ptr.bouge = true; return suivreArr(e); }
     if (!ptr.bouge) {
       if (Math.hypot(x - ptr.x0, e.clientY - ptr.y0) < 6) return;
-      ptr.bouge = true;
+      ptr.bouge = true; clearTimeout(ptr.long);
       if (ptr.dehors) return;
+      // tirée vers le haut ou le bas : on l'attrape pour la sortir (de côté : on tourne la page, comme avant)
+      if (ptr.i >= 0 && Math.abs(e.clientY - ptr.y0) > 1.4 * Math.abs(x - ptr.x0) && saisirPage(ptr.i, ptr.x0, ptr.y0)) { ptr.pris = true; return suivreArr(e); }
       const avant = double ? ptr.x0 > dos : x < ptr.x0;
       if (avant ? s < maxS() : s > 0) {
         const f = prendre(avant ? s : s - 1, avant ? 0 : 1);
@@ -471,6 +486,8 @@
   function finPtr(e) {
     if (!ptr || e.pointerId !== ptr.id) return;
     const p = ptr, f = p.f; ptr = null;
+    clearTimeout(p.long);
+    if (p.pris) { if (arr && !arr.vue) reposer(); return; }
     if (f) {
       const vx = p.vit.lire().x, cible = e.type === "pointercancel" ? (p.avant ? 0 : 1) : vx < -300 ? 1 : vx > 300 ? 0 : f.p.v > 0.5 ? 1 : 0;
       f.tenu = false; f.p.k = 140; f.p.a = 22; f.p.c = cible;
@@ -616,5 +633,5 @@
       if (ouvert && k === cl) { if (!fouille.hidden) construire(); else majStatiques(); }
     } });
   }
-  K.etat = () => ({ ouvert, anime, double, s, n: k ? nb() : 0, vols: vols.length, pw, ph, bx, by, fouille: !fouille.hidden, geo: geo && { tw: geo.tw, th: geo.th, esp: geo.esp, bas: geo.bas, cols: geo.cols, x0: geo.x0 } });
+  K.etat = () => ({ ouvert, anime, double, s, n: k ? nb() : 0, vols: vols.length, pw, ph, bx, by, fouille: !fouille.hidden, choix, pastilles: K.pastilles(), tenue: arr ? { i: arr.i, sortie: !!arr.vue } : null, geo: geo && { tw: geo.tw, th: geo.th, esp: geo.esp, bas: geo.bas, cols: geo.cols, x0: geo.x0 } });
 })(window.Cartable);
