@@ -176,6 +176,14 @@
         chemin(g, p, W, H); g.stroke();
         const x = p[n - 2] * W, y = p[n - 1] * H, a = Math.atan2(y - p[n - 3] * H, x - p[n - 4] * W);
         g.beginPath(); g.moveTo(x - t * Math.cos(a - 0.42), y - t * Math.sin(a - 0.42)); g.lineTo(x, y); g.lineTo(x - t * Math.cos(a + 0.42), y - t * Math.sin(a + 0.42)); g.stroke();
+      } else if (el.t === "crochet") {                  // crochet d'analyse (C.P., C.R.…) : trait de x0 à x1 à la hauteur y, petits crochets
+        const x0 = el.x0 * W, x1 = el.x1 * W, y = el.y * H, h = (el.h > 0 && el.h < 0.2 ? el.h : 0.012) * H * (el.sens === "bas" ? 1 : -1);
+        g.beginPath(); g.moveTo(x0, y + h); g.lineTo(x0, y); g.lineTo(x1, y); g.lineTo(x1, y + h); g.stroke();   // sens "haut" (défaut) : └──┘
+        if (Array.isArray(el.seg) && el.seg.length) {    // étiquette posée dessus, centrée ; ly = sa ligne de base (sinon juste au-dessus du trait)
+          imprime = el.f === "imprime" || el.f === "italique" ? el.f : "";
+          ecrire(g, el.seg, (x0 + x1) / 2, (el.ly > 0 ? el.ly * H : y - px * 0.3), px, true);
+          imprime = "";
+        }
       } else if (el.t === "ovale") { g.beginPath(); g.ellipse(el.x * W, el.y * H, el.rx * W, el.ry * H, el.rot || 0, 0, Math.PI * 2); g.stroke(); }
       else if (el.t === "portee") { g.lineWidth = Math.max(0.7, W * 0.0015); portee(g, el.x0, el.x1, el.y, el.e, W, H); }
       else if (el.t === "cle" || el.t === "note") {
