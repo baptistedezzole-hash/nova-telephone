@@ -149,7 +149,7 @@
     past.forEach((p, c) => {
       const j = libre ? indexVu(c) : -1; p.i = j; p.el.hidden = j < 0;
       if (j < 0) return;
-      const photo = !!k.pages[j].image, enHaut = photo && pw < 470;       // une photo a déjà sa pastille en bas : sur petit écran, on monte
+      const photo = !!k.pages[j].image, enHaut = !double || (photo && pw < 470);       // téléphone (une seule page) : en haut, loin des messages et de la pastille photo
       p.el.classList.toggle("court", photo || pw < 460); p.el.classList.toggle("a-gauche", !c);
       p.el.classList.toggle("choisie", c === choix && indexVu(1 - c) >= 0);
       p.el.style.left = Math.round(c ? bx + 2 * pw - 12 : bx + 12) + "px"; p.el.style.top = Math.round(enHaut ? by + 10 : by + ph - 8) + "px";
