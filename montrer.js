@@ -75,6 +75,27 @@
   padding:7px 14px; border-radius:999px; background:rgba(10,14,30,.92); border:1px solid rgba(233,214,168,.3); color:#e9d6a8;
   font:500 12.5px/1.3 var(--sans,system-ui,sans-serif); opacity:0; pointer-events:none; transition:opacity .25s, transform .25s; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 #montre .pastille.vu { opacity:1; transform:translate(-50%,0); }
+#montre.fichier .barre .tourner, #montre.fichier .barre .agrandir, #montre.fichier .barre .r { display:none; }
+#montre .lecteur { position:absolute; inset:0; overflow:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding:6px 4px 92px; box-sizing:border-box;
+  display:flex; flex-direction:column; align-items:center; gap:10px; }
+#montre .lecteur img.page { display:block; width:100%; max-width:980px; height:auto; background:#fff; border-radius:4px; box-shadow:0 0 0 1px rgba(233,214,168,.22),0 6px 26px rgba(0,0,0,.45); }
+#montre .lecteur pre { margin:0; width:100%; max-width:980px; box-sizing:border-box; padding:14px 16px; border-radius:12px; background:rgba(10,14,30,.82); border:1px solid rgba(255,255,255,.1);
+  white-space:pre-wrap; word-break:break-word; font:400 13.5px/1.5 var(--mono,ui-monospace,monospace); color:rgba(226,232,246,.92); user-select:text; -webkit-user-select:text; }
+#montre .lecteur audio { width:min(92vw,520px); }
+#montre .lecteur video { width:100%; max-width:980px; max-height:calc(100% - 20px); background:#000; border-radius:8px; }
+#montre .lecteur .fiche { margin-top:12vh; width:min(84vw,360px); padding:22px 18px; border-radius:18px; text-align:center; background:rgba(10,14,30,.86); border:1px solid rgba(233,214,168,.22); }
+#montre .lecteur .fiche b { display:inline-grid; place-items:center; min-width:62px; height:62px; padding:0 10px; border-radius:16px; border:1px solid rgba(233,214,168,.45); color:#e9d6a8;
+  font:700 17px/1 var(--mono,ui-monospace,monospace); letter-spacing:.06em; background:rgba(233,214,168,.08); }
+#montre .lecteur .fiche div { margin-top:12px; font:600 15px/1.35 var(--sans,system-ui,sans-serif); word-break:break-word; }
+#montre .lecteur .fiche small { display:block; margin-top:6px; color:rgba(226,232,246,.55); font-size:12.5px; line-height:1.4; }
+#montre .lecteur .suite { color:rgba(226,232,246,.6); font-size:13px; padding:4px 12px 10px; text-align:center; }
+#montre .actions-f { position:absolute; z-index:2; left:0; right:0; bottom:calc(env(safe-area-inset-bottom,0px) + 12px); display:none; justify-content:center; gap:10px; padding:0 12px; pointer-events:none; }
+#montre.actions-on .actions-f { display:flex; }
+#montre .actions-f button { pointer-events:auto; height:48px; padding:0 22px; border-radius:999px; border:1px solid rgba(255,255,255,.18); background:rgba(10,14,30,.9); color:inherit;
+  font:600 15px/1 var(--sans,system-ui,sans-serif); box-shadow:0 8px 26px rgba(0,0,0,.5); }
+#montre .actions-f .dl { border-color:rgba(233,214,168,.6); color:#0b0d16; background:#e9d6a8; }
+#montre .actions-f button:active { transform:scale(.95); }
+#montre.plein .actions-f { display:none; }
 `;
   const st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
   const P = document.createElement("div");
@@ -91,6 +112,7 @@
 <div class="liste"><h4>Déjà montré</h4><div class="items"></div></div>
 <div class="mot"><h4>Écrire à Nova · <b></b></h4><textarea rows="3" maxlength="8000" placeholder="Ton message…" aria-label="Message pour Nova"></textarea>
 <div class="actions"><button class="laisser" type="button">Plus tard</button><button class="partir" type="button" disabled>Envoyer ➤</button></div></div>
+<div class="actions-f"><button class="dl" type="button">⤓ Télécharger</button><button class="pt" type="button">↗ Partager</button></div>
 <div class="pastille" role="status" aria-live="polite"></div>`;
   document.body.appendChild(P);
   const scene = P.querySelector(".scene"), msg = P.querySelector(".msg"), items = P.querySelector(".items");
@@ -129,7 +151,7 @@
   }
 
   function disposer() {
-    if (!vue) return;
+    if (!vue || (vue.tagName !== "IFRAME" && vue.tagName !== "IMG")) return;   // lecteur de fichier : il se met en page seul
     const r = scene.getBoundingClientRect();
     const aw = Math.max(50, r.width), ah = Math.max(50, r.height);
     const paysageEcran = aw >= ah;
@@ -155,8 +177,13 @@
 
   function fermerVue() {
     ticket++;
-    if (vue) { try { vue.src = "about:blank"; } catch (x) {} vue.remove(); vue = null; }
-    P.classList.remove("clavier");
+    if (vue) {
+      for (const m of vue.querySelectorAll ? vue.querySelectorAll("audio,video") : []) { try { m.pause(); m.removeAttribute("src"); m.load(); } catch (x) {} }
+      if (vue.tagName === "IFRAME" || vue.tagName === "IMG") { try { vue.src = "about:blank"; } catch (x) {} }
+      vue.remove(); vue = null;
+    }
+    fic = null;
+    P.classList.remove("clavier", "fichier", "actions-on");
     if (verrouPose) orienter(false, 0);
   }
 
@@ -171,6 +198,95 @@
       else if (!paysage) { verrouPose = false; if (o && o.unlock) o.unlock(); }
     } catch (x) {}
     p.then(ok => { if (n && vue && vue.contentWindow) { try { vue.contentWindow.postMessage({ nova: "montre-orientation", n, ok }, "*"); } catch (x) {} } });
+  }
+
+  // 2026-11-25 fichiers envoyés par Nova (PDF, son, vidéo, texte, image) : Télécharger sous le vrai nom, Partager (feuille
+  // de partage du téléphone). Le fichier passe par l'URL à ticket ; jamais l'URL elle-même n'est partagée.
+  const okUrl = u => typeof u === "string" && /^\/montre\/[A-Za-z0-9_-]{43}\//.test(u);
+  const PRECHARGE = 60 * 1024 * 1024;   // au-delà (grosse vidéo), le fichier n'est pris qu'au toucher
+  let fic = null;
+  const poids = o => !o ? "" : o < 1024 * 1024 ? Math.max(1, Math.round(o / 1024)) + " Ko" : (o / 1048576).toFixed(o < 10485760 ? 1 : 0).replace(".", ",") + " Mo";
+  function poserActions(d, src) {
+    fic = { nom: String(d.nom || "fichier").slice(0, 150), mime: String(d.mime || "application/octet-stream"), src,
+      dl: (NA.base || "") + d.dl, octets: +d.octets || 0, blob: null, promesse: null };
+    P.classList.add("actions-on");
+    if (fic.octets && fic.octets <= PRECHARGE) charger(fic).catch(() => {});
+  }
+  function charger(f) {
+    if (!f.promesse) f.promesse = fetch(f.src, { credentials: "omit", referrerPolicy: "no-referrer" })
+      .then(r => { if (!r.ok) throw new Error("http " + r.status); return r.blob(); })
+      .then(b => (f.blob = b), e => { f.promesse = null; throw e; });
+    return f.promesse;
+  }
+  function telecharger() {
+    const f = fic; if (!f) return;
+    const a = document.createElement("a");
+    let tmp = null;
+    if (f.blob) { tmp = URL.createObjectURL(f.blob); a.href = tmp; } else a.href = f.dl;   // sinon : Content-Disposition du PC
+    a.download = f.nom; a.rel = "noopener"; a.style.display = "none";
+    document.body.appendChild(a); a.click(); a.remove();
+    if (tmp) setTimeout(() => URL.revokeObjectURL(tmp), 60000);
+    annoncer("⤓ " + f.nom, 2600);
+  }
+  async function partager() {
+    const f = fic; if (!f) return;
+    try {
+      if (navigator.share && navigator.canShare) {
+        const b = f.blob || await charger(f);
+        const file = new File([b], f.nom, { type: f.mime.split(";")[0] });
+        if (navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: f.nom }); return; }
+      }
+    } catch (x) { if (x && x.name === "AbortError") return; }
+    telecharger();
+    annoncer("Partage direct impossible ici : le fichier est téléchargé, partage-le depuis tes fichiers.", 4200);
+  }
+  function fiche(L, icone, texte, sous) {
+    const c = document.createElement("div"); c.className = "fiche";
+    const b = document.createElement("b"); b.textContent = icone; c.appendChild(b);
+    const t = document.createElement("div"); t.textContent = texte; c.appendChild(t);
+    if (sous) { const s = document.createElement("small"); s.textContent = sous; c.appendChild(s); }
+    L.appendChild(c);
+  }
+  function rendrePages(L, d, n, essais) {
+    L.textContent = "";
+    const pages = (Array.isArray(d.pages) ? d.pages : []).filter(okUrl);
+    if (pages.length) {
+      for (const u of pages) {
+        const im = document.createElement("img"); im.className = "page"; im.alt = ""; im.decoding = "async"; im.referrerPolicy = "no-referrer";
+        im.src = (NA.base || "") + u; L.appendChild(im);
+      }
+      const nb = +d.nb_pages || 0;
+      if (nb > pages.length) { const s = document.createElement("div"); s.className = "suite"; s.textContent = `${pages.length} pages sur ${nb} en aperçu : télécharge le PDF pour la suite.`; L.appendChild(s); }
+      return;
+    }
+    const nom = (fic && fic.nom) || "PDF", sous = fic ? poids(fic.octets) : "";
+    if (d.apercu === "en cours" && essais < 30) {
+      fiche(L, "PDF", nom, (sous ? sous + " · " : "") + "aperçu en préparation… (Télécharger marche déjà)");
+      setTimeout(async () => {
+        if (n !== ticket || !ouvert) return;
+        let d2 = null;
+        try { const r = await fetch("/api/montrer/ouvrir", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: ouvert.id }) }); d2 = r.ok ? await r.json() : null; } catch (x) {}
+        if (n === ticket && vue === L) rendrePages(L, d2 && d2.type === "fichier" ? d2 : d, n, essais + 1);
+      }, 1000);
+      return;
+    }
+    fiche(L, "PDF", nom, (sous ? sous + " · " : "") + "pas d'aperçu : touche Télécharger pour l'ouvrir.");
+  }
+  function lecteur(d, n, src) {
+    const L = document.createElement("div"); L.className = "lecteur";
+    const g = d.genre, nom = (fic && fic.nom) || d.titre || "Fichier", sous = fic ? poids(fic.octets) : "";
+    if (g === "pdf") rendrePages(L, d, n, 0);
+    else if (g === "audio") {
+      fiche(L, "♪", nom, sous);
+      const a = document.createElement("audio"); a.controls = true; a.preload = "metadata"; a.src = src; L.appendChild(a);
+    } else if (g === "video") {
+      const v = document.createElement("video"); v.controls = true; v.playsInline = true; v.preload = "metadata"; v.src = src; L.appendChild(v);
+    } else if (g === "texte") {
+      const pre = document.createElement("pre"); pre.textContent = "…"; L.appendChild(pre);
+      (fic ? charger(fic) : fetch(src).then(r => r.blob())).then(b => b.slice(0, 2000000).text())
+        .then(t => { if (n === ticket) pre.textContent = t; }, () => { if (n === ticket) pre.textContent = "Le texte n'arrive pas."; });
+    } else fiche(L, "DOC", nom, (sous ? sous + " · " : "") + "pas d'aperçu ici : touche Télécharger pour l'ouvrir.");
+    return L;
   }
 
   async function ouvrir(p, main) {
@@ -192,7 +308,12 @@
     if (n !== ticket || !d || typeof d.url !== "string" || !/^\/montre\/[A-Za-z0-9_-]{43}\//.test(d.url)) return;
     ouvert = Object.assign({}, p, { taille: Array.isArray(d.taille) ? d.taille : null, paysage: !!d.paysage, type: d.type });
     const src = (NA.base || "") + d.url;
-    if (d.type === "image") {
+    if (okUrl(d.dl)) poserActions(d, src);
+    if (d.type === "fichier") {   // 2026-11-25 PDF (pages en images), son, vidéo, texte, document : lu ici, jamais dans un cadre
+      P.classList.add("fichier");
+      vue = lecteur(d, n, src);
+      dire("");
+    } else if (d.type === "image") {
       vue = document.createElement("img"); vue.className = "vue"; vue.alt = p.titre || "";
       vue.onload = () => { dire(""); disposer(); };
       vue.onerror = () => dire("L'image n'arrive pas.");
@@ -226,7 +347,8 @@
       const b = document.createElement("button");
       if (ouvert && ouvert.id === p.id) b.className = "ici";
       b.textContent = p.titre || "Sans titre";
-      const s = document.createElement("small"); s.textContent = (p.type === "image" ? "Image · " : "Page · ") + heure(p.t); b.appendChild(s);
+      const genre = p.type === "fichier" ? ({ pdf: "PDF", audio: "Son", video: "Vidéo", texte: "Texte" }[p.genre] || "Fichier") : p.type === "image" ? "Image" : "Page";
+      const s = document.createElement("small"); s.textContent = genre + " · " + heure(p.t); b.appendChild(s);
       b.onclick = () => ouvrir(p, true);
       items.appendChild(b);
     }
@@ -241,7 +363,7 @@
     if (a) ouvrir(a, false);
   }
 
-  let pause = 0, enCours = false;
+  let pause = 0, enCours = false, connus = null;
   async function sonder() {
     if (enCours || Date.now() < pause || document.visibilityState !== "visible") return;
     enCours = true;
@@ -251,6 +373,9 @@
       if (!r.ok) return;
       const d = await r.json();
       partages = Array.isArray(d.partages) ? d.partages.filter(p => p && typeof p.id === "string") : [];
+      // 2026-11-25 un envoi qui arrive pendant qu'autre chose est ouvert : petite pastille (pas d'interruption)
+      if (connus && ouvert) { const nv = partages.find(p => !connus.has(p.id) && Date.now() - p.t * 1000 < RECENT); if (nv) annoncer("✦ Nouveau : « " + (nv.titre || "envoi") + " » (touche ✦ dans la barre)", 4200); }
+      connus = new Set(partages.map(p => p.id));
       if (Array.isArray(d.vus)) {   // PC à jour : son état fait foi (sans écraser une ouverture toute fraîche pas encore notée)
         srv = { vus: d.vus.filter(x => typeof x === "string"), dernier: typeof d.dernier === "string" ? d.dernier : null, connu: true };
         if (frais && Date.now() - frais.t < 15000) { srv.vus = srv.vus.filter(x => x !== frais.id).concat(frais.id); srv.dernier = frais.id; }
@@ -369,6 +494,8 @@
   window.NovaMontrer = { ouvrir: id => ouvrir(partages.find(p => p.id === id), true), ouvrirPartage: p => ouvrir(p, true), fermer, sonder, _etat: () => ({ partages, ouvert, rot, srv }), _choisir: choisirBouton,
     ecrire: ouvrirMot, _composer: composer, _fileMots: lireFile };
   poserBouton();
-  setTimeout(sonder, 1500);
-  setInterval(sonder, 4000);
+  P.querySelector(".actions-f .dl").onclick = telecharger;
+  P.querySelector(".actions-f .pt").onclick = partager;
+  setTimeout(sonder, 600);
+  setInterval(sonder, 1200);   // 2026-11-25 « aussi rapide qu'un mail » : un envoi du PC s'ouvre en ~1 s (appli ouverte)
 })();
