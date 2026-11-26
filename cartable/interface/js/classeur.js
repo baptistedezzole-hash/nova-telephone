@@ -15,6 +15,7 @@
   let k = null, kv = null, ouvert = false, anime = false, double = true, pw = 400, ph = 566, bx = 0, by = 0;
   let s = 0, vols = [], reserve = [], tourne = false, ptr = null, molette = 0;
   K.ouvert = () => ouvert;
+  K.courant = () => (ouvert && k ? k : null);                 // le classeur ouvert (pour Nova : « rajoute une feuille »)
 
   // ---------- les pages et les feuillets ----------
   const nb = () => k.pages.length;

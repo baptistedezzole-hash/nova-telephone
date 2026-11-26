@@ -270,6 +270,7 @@
     const textes = { "a-jour": "Synchronisé", synchro: "Synchronisation…", "hors-ligne": "Hors ligne : gardé ici", arretee: "Synchro arrêtée", "sans-synchro": "Sur cet appareil" };
     return {
       async charger() { await c.pret; return construire(); },
+      idNoyau(u) { return u ? nId(u) : null; },            // id interface -> id noyau (classeur / feuille ouverts, pour Nova)
       sauver(d, quoi) { if (d && d !== donnees) donnees = d; planifier(); },
       surChangement(f) { auditeurs.add(f); return () => auditeurs.delete(f); },
       etat() { const s = c.synchro(); return { enLigne: s.etat === "a-jour", etat: s.etat, texte: textes[s.etat] || s.etat, derniere: s.derniere }; },

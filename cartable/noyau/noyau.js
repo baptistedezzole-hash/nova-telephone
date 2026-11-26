@@ -812,6 +812,11 @@
   // l'interface s'abonne avec CartableNoyau.surNova(f)).
   const auditeursNova = new Set();
   function surNova(f) { auditeursNova.add(f); return () => auditeursNova.delete(f); }
+  // ce que l'interface a sous les yeux : () => { classeur: id noyau | null, feuille: id noyau | null }
+  // (« rajoute une feuille » sans nom = dans le classeur ouvert ; « fais-la au propre » = la feuille ouverte)
+  let contexteNova = null;
+  function fixerContexteNova(f) { contexteNova = typeof f === "function" ? f : null; }
+  const vuNova = () => { try { return (contexteNova && contexteNova()) || {}; } catch (e) { return {}; } };
   // la mise au propre d'une photo donnée par Nova : la transcription (éléments à dessiner, vérifiés) ou, sans elle, le scan net
   // la partition lue automatiquement : { sha (blob du MusicXML), mesures, notes, confiance 0..1, verif { etat, corrections, fautes }, titre } -> champ `propre.partition`
   function partitionInfo(sha, i) {
@@ -872,12 +877,33 @@
     const rangee = (o) => { const p = o.place && o.place.p !== BUREAU ? c.obtenir(o.place.p) : null; return p && p.type && !p.supprime ? p : null; };
     try {
       switch (cmd && cmd.action) {
-        case "creer-classeur": r.id = c.creerClasseur({ titre: cmd.titre, pos: placeLibre() }); r.dit = "Classeur « " + cmd.titre + " » créé."; break;
+        case "creer-classeur": {                              // « crée un classeur Solfège (avec 16 feuilles) » : un seul lot
+          const nf = Math.max(0, Math.min(Math.floor(Number(cmd.feuilles) || 0), 200));
+          r.id = c.transaction(() => {
+            const id = c.creerClasseur({ titre: cmd.titre, pos: placeLibre() });
+            for (let i = 0; i < nf; i++) c.creerFeuille({ dans: id, papier: cmd.papier || "blanc" });
+            return id;
+          });
+          r.dit = "Classeur « " + cmd.titre + " » créé" + (nf ? " avec " + nf + " feuille" + (nf > 1 ? "s" : "") : "") + "."; break;
+        }
         case "creer-cahier": r.id = c.creerCahier({ titre: cmd.titre, papier: cmd.papier, pos: placeLibre() }); r.dit = "Cahier « " + cmd.titre + " » créé."; break;
-        case "creer-feuille": {
-          const dans = cmd.dans ? trouverOuErreur(cmd.dans).id : undefined;
-          r.id = c.creerFeuille({ papier: cmd.papier || "blanc", titre: cmd.titre, dans, pos: dans ? undefined : placeLibre() });
-          r.dit = "Feuille créée."; break;
+        case "creer-feuille": {                               // « rajoute (16) feuille(s) (dans X) » : sans X = le classeur ouvert, sinon le bureau
+          const n = Math.max(1, Math.min(Math.floor(Number(cmd.n) || 1), 200));
+          const vu = vuNova();
+          const k = cmd.dans ? trouverOuErreur(cmd.dans)
+                  : (vu.classeur && c.obtenir(vu.classeur) && !c.obtenir(vu.classeur).supprime ? c.obtenir(vu.classeur) : null);
+          if (k && !["classeur", "cahier", "intercalaire"].includes(k.type)) throw new Error("« " + (k.titre || k.type) + " » n'est pas un classeur");
+          const papier = cmd.papier || (k && k.papier) || "blanc";
+          const ids = c.transaction(() => {
+            const l = [];
+            for (let i = 0; i < n; i++) l.push(c.creerFeuille({ papier, titre: n === 1 ? cmd.titre : undefined, dans: k ? k.id : undefined, pos: k ? undefined : placeLibre() }));
+            return l;
+          });
+          r.id = ids[0]; if (n > 1) r.ids = ids; if (k) r.dans = k.id;
+          const nom = k ? (k.titre || k.type) : "";
+          r.dit = n === 1 ? (k ? "Feuille ajoutée dans « " + nom + " »." : "Feuille créée.")
+                          : n + " feuilles " + (k ? "ajoutées dans « " + nom + " »." : "posées sur le bureau.");
+          break;
         }
         case "ranger": {
           const quoi = /^(la |une |ma )?(derniere )?(photo|scan)$/.test(plat(cmd.quoi)) ? c.dernier((o) => o.papier === "photo")
@@ -962,7 +988,10 @@
           break;
         }
         case "propre": {                                      // « mets au propre … » / « remets l'original de … » (l'original n'est jamais effacé)
-          const o = trouverOuErreur(cmd.quoi, "feuille"); r.id = o.id;
+          const vu = vuNova(), fo = vu.feuille && c.obtenir(vu.feuille);   // « fais-la au propre » : la feuille ouverte
+          const celleOuverte = !cmd.quoi || /^(la|celle ci|celle la|ca|cette (feuille|page|photo)|la (feuille|page|photo)( ouverte)?)$/.test(plat(cmd.quoi));
+          if (celleOuverte && !(fo && fo.type === "feuille" && !fo.supprime)) throw new Error("ouvre d'abord la feuille à mettre au propre");
+          const o = celleOuverte ? fo : trouverOuErreur(cmd.quoi, "feuille"); r.id = o.id;
           if (cmd.original) { c.modifier(o.id, { ext_voirPropre: false }); r.dit = "Je remets l'original de « " + (o.titre || "la feuille") + " »."; break; }
           const pr = propreDeNova(Object.assign({ propre: o.papier === "photo" && !(o.propre && o.propre.v === 2) }, cmd));
           if (pr) c.mettreAuPropre(o.id, pr, typeof cmd.texte === "string" ? cmd.texte : undefined);
@@ -980,7 +1009,7 @@
 
   return {
     VERSION, BUREAU, TYPES, PAPIERS, OUTILS,
-    Cartable, demarrer, executerCommande, surNova,
+    Cartable, demarrer, executerCommande, surNova, fixerContexteNova,
     stockageMemoire, stockageIndexedDB,
     transportHttp, serveurMemoire,
     // outils (exposés pour les tests et le serveur)

@@ -184,19 +184,27 @@
   function brancherNova() {
     const N = window.CartableNoyau;
     if (!N || !N.surNova || P.essai) return;
+    // ce qui est ouvert, pour « rajoute une feuille » (classeur ouvert) et « fais-la au propre » (feuille ouverte)
+    const idN = (u) => (u && P.idNoyau ? P.idNoyau(u) : u) || null;
+    if (N.fixerContexteNova) N.fixerContexteNova(() => {
+      const pg = F.ouvert() && F.page(), k = K.courant && K.courant();
+      return { feuille: pg ? idN(pg.id) : null, classeur: k ? idN(k.id) : null };
+    });
+    const pageOuverteEst = (id) => { const pg = F.ouvert() && F.page(); return !!(pg && id && (pg.id === id || idN(pg.id) === id)); };
     N.surNova(async (cmd, r) => {
       if (!cmd || !r) return;
-      if (cmd.action === "ouvrir" && r.ok && r.id) {
-        await U.attendre(120);                                       // le temps que le bureau se redessine
-        const v = B.vue(r.id);
-        if (v && !F.ouvert() && !K.ouvert()) B.surToucher(v);
+      if (cmd.action === "ouvrir" && r.ok && r.id) {                 // la réponse part tout de suite, l'ouverture suit (animation)
+        U.attendre(60).then(() => { const v = B.vue(r.id); if (v && !F.ouvert() && !K.ouvert()) B.surToucher(v); });
       }
       if ((cmd.action === "importer" || cmd.action === "propre") && r.ok) {      // photo ajoutée par Nova, mise au propre à la voix
-        if (r.aReconnaitre && r.id) {                                // écriture au stylet : on ouvre la feuille et on la met au propre
-          await U.attendre(120);
-          const v = B.vue(r.id);
-          if (v && !F.ouvert() && !K.ouvert()) { B.surToucher(v); await U.attendre(700); F.action("propre"); }
-          else { r.ok = false; r.erreur = "ouvre d'abord cette feuille"; }
+        if (r.aReconnaitre && r.id) {                                // écriture au stylet : on la reconnaît (en l'ouvrant d'abord si besoin)
+          if (pageOuverteEst(r.id)) F.action("propre");
+          else {
+            await U.attendre(60);
+            const v = B.vue(r.id);
+            if (v && !F.ouvert() && !K.ouvert()) { B.surToucher(v); U.attendre(700).then(() => F.action("propre")); }
+            else { r.ok = false; r.erreur = "ouvre d'abord cette feuille"; }
+          }
         } else if (r.dit) C.dire(r.dit);
       }
       if (cmd.action === "envoyer-telephone" || cmd.action === "exporter") {

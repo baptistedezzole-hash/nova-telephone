@@ -1,6 +1,5 @@
 // 2026-11-25 (5) APPLIS : le tiroir des applis de Nova sur le téléphone.
-// 26/11 : le tiroir arrive par la DROITE. Glisser vers la gauche (depuis la droite de l'écran principal, le tiroir suit
-// le doigt) ou bouton ▦ de l'en-tête ; vers la droite = fermer.
+// Glisser vers la droite (n'importe où sur l'écran principal, le tiroir suit le doigt) ou bouton ▦ de l'en-tête.
 //  - Hors ligne (dans l'appli, gardées par le service worker) : Cartable, Lecture de notes -> cadre plein écran, même origine.
 //  - Depuis le PC : la liste vient de GET /api/montrer/applis (clés + titres seulement, jamais un chemin) ; un appui
 //    POST /api/montrer/appli {cle} -> partage « montrer » ouvert dans le panneau de Nova (NovaMontrer.ouvrirPartage).
@@ -63,23 +62,23 @@
 #applisVoile { position:fixed; inset:0; z-index:2147483000; background:rgba(2,3,10,.62); opacity:0; pointer-events:none; transition:opacity .32s;
   -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px); }
 #applisVoile.vu { pointer-events:auto; }
-#applis { position:fixed; z-index:2147483001; top:0; bottom:0; right:0; width:min(88vw,400px); display:flex; flex-direction:column;
-  transform:translateX(104%); transition:transform .38s cubic-bezier(.22,.8,.24,1); will-change:transform; touch-action:pan-y;
+#applis { position:fixed; z-index:2147483001; top:0; bottom:0; left:0; width:min(88vw,400px); display:flex; flex-direction:column;
+  transform:translateX(-104%); transition:transform .38s cubic-bezier(.22,.8,.24,1); will-change:transform; touch-action:pan-y;
   color:rgba(226,232,246,.94); font-family:var(--sans,system-ui,sans-serif);
   background:radial-gradient(1px 1px at 18% 12%,rgba(255,255,255,.7),transparent 60%),radial-gradient(1px 1px at 76% 22%,rgba(255,255,255,.5),transparent 60%),
     radial-gradient(1.5px 1.5px at 62% 71%,rgba(233,214,168,.7),transparent 60%),radial-gradient(1px 1px at 28% 88%,rgba(169,200,255,.55),transparent 60%),
-    radial-gradient(1px 1px at 90% 52%,rgba(255,255,255,.45),transparent 60%),radial-gradient(130% 70% at 100% 0%,rgba(124,77,255,.16),transparent 60%),
-    radial-gradient(120% 60% at 0% 100%,rgba(233,214,168,.10),transparent 60%),linear-gradient(200deg,#0a0820,#04040d 70%);
-  box-shadow:-1px 0 0 rgba(233,214,168,.22),-24px 0 60px rgba(0,0,0,.55); border-radius:26px 0 0 26px; overflow:hidden; }
+    radial-gradient(1px 1px at 90% 52%,rgba(255,255,255,.45),transparent 60%),radial-gradient(130% 70% at 0% 0%,rgba(124,77,255,.16),transparent 60%),
+    radial-gradient(120% 60% at 100% 100%,rgba(233,214,168,.10),transparent 60%),linear-gradient(160deg,#0a0820,#04040d 70%);
+  box-shadow:1px 0 0 rgba(233,214,168,.22),24px 0 60px rgba(0,0,0,.55); border-radius:0 26px 26px 0; overflow:hidden; }
 #applis.vu { transform:none; }
 #applis.glisse, #applisVoile.glisse { transition:none; }
-#applis .tete { flex:none; padding:calc(env(safe-area-inset-top,0px) + 22px) calc(env(safe-area-inset-right,0px) + 22px) 6px 24px; }
+#applis .tete { flex:none; padding:calc(env(safe-area-inset-top,0px) + 22px) 22px 6px calc(env(safe-area-inset-left,0px) + 24px); }
 #applis .tete .lbl { font:500 11px/1 var(--sans,system-ui); letter-spacing:.32em; text-transform:uppercase; color:rgba(233,214,168,.78); }
 #applis .tete h2 { margin:8px 0 0; font:300 30px/1.05 var(--sans,system-ui); letter-spacing:.02em; color:#f4efff; }
 #applis .etatPc { margin-top:10px; display:flex; align-items:center; gap:8px; font-size:12.5px; color:rgba(214,224,255,.66); }
 #applis .etatPc i { width:7px; height:7px; border-radius:50%; background:#5a5f73; box-shadow:0 0 0 3px rgba(90,95,115,.18); }
 #applis .etatPc.ok i { background:#5cff9d; box-shadow:0 0 10px rgba(92,255,157,.7); }
-#applis .corps { flex:1; overflow-y:auto; overscroll-behavior:contain; padding:8px calc(env(safe-area-inset-right,0px) + 18px) calc(env(safe-area-inset-bottom,0px) + 26px) 18px; }
+#applis .corps { flex:1; overflow-y:auto; overscroll-behavior:contain; padding:8px 18px calc(env(safe-area-inset-bottom,0px) + 26px) calc(env(safe-area-inset-left,0px) + 18px); }
 #applis h3 { margin:20px 6px 12px; display:flex; align-items:center; gap:10px; font:500 11px/1 var(--sans,system-ui); letter-spacing:.24em;
   text-transform:uppercase; color:rgba(214,224,255,.55); }
 #applis h3::after { content:""; flex:1; height:1px; background:linear-gradient(90deg,rgba(233,214,168,.28),transparent); }
@@ -139,7 +138,7 @@
 <a class="autonome" href="${APK_LABO}" target="_blank" rel="noopener" data-cle="labo-appli"><svg viewBox="0 0 24 24" aria-hidden="true">${IC.labo}</svg><span>Labo Netrunner : version autonome (appli)<small>Le téléphone scanne lui-même, sans le PC</small></span></a>
 <h3>Depuis le PC</h3><div class="grille" data-g="pc"></div>
 <h3>Raccourcis</h3><div class="grille" data-g="raccourcis"></div>
-<p class="note">Glisse du bord droit vers la gauche pour revenir ici ; vers la droite pour fermer. « Hors ligne » marche sans réseau ; « PC » demande le PC allumé.</p></div>`;
+<p class="note">Glisse vers la droite pour revenir ici. « Hors ligne » marche sans réseau ; « PC » demande le PC allumé.</p></div>`;
   const V = document.createElement("div"); V.id = "appliVue";
   V.innerHTML = `<div class="barre"><button class="retour" type="button" aria-label="Revenir aux applis"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>Applis</button><span class="titre"></span><span class="hl"></span></div>`;
   const mot = document.createElement("div"); mot.id = "applisMot"; mot.setAttribute("role", "status");
@@ -271,7 +270,7 @@
   const largeur = () => T.getBoundingClientRect().width || Math.min(innerWidth * 0.88, 400);
   function poser(x) {   // x = 0 (fermé) .. 1 (ouvert)
     x = Math.max(0, Math.min(1, x));
-    T.style.transform = `translateX(${(1 - x) * 104}%)`;   // 26/11 : arrive par la droite voile.style.opacity = String(x);
+    T.style.transform = `translateX(${(x - 1) * 104}%)`; voile.style.opacity = String(x);
   }
   function ouvrir() {
     poserBouton();
@@ -290,8 +289,7 @@
   btn.onclick = () => (T.classList.contains("vu") ? fermer() : ouvrir());
   voile.onclick = () => fermer();
 
-  // Glisser (26/11, miroir) : vers la GAUCHE depuis la droite de l'écran principal = ouvre (suit le doigt) ;
-  // vers la droite dans le tiroir ou sur le voile = ferme. Le tout bord (geste retour d'Android) reste au système.
+  // Glisser : vers la droite sur l'écran principal = ouvre (suit le doigt) ; vers la gauche dans le tiroir = ferme.
   const IGNORER = "#histo, #parler, #perm, #saisie, #histoOuvrir, input, textarea, select, [contenteditable], .feuille, #montre, #appliVue, #applis";
   function bloque() {
     return !!(document.querySelector(".feuille.vu") || ($("montre") && $("montre").classList.contains("vu")) || V.classList.contains("vu")
@@ -309,13 +307,13 @@
     const dx = p.clientX - g.x0, dy = p.clientY - g.y0;
     if (!g.pris) {
       if (Math.abs(dx) < 14 && Math.abs(dy) < 14) return;
-      if (Math.abs(dx) < Math.abs(dy) * 1.4 || (g.mode === "ouvrir" ? dx > 0 : dx < 0)) { g = null; return; }
+      if (Math.abs(dx) < Math.abs(dy) * 1.4 || (g.mode === "ouvrir" ? dx < 0 : dx > 0)) { g = null; return; }
       g.pris = true; T.classList.add("glisse"); voile.classList.add("glisse");
       if (g.mode === "ouvrir") { dessiner(); voile.classList.add("vu"); T.classList.add("vu"); }
     }
     if (e.cancelable) e.preventDefault();
     const w = largeur();
-    g.x = g.mode === "ouvrir" ? Math.max(0, -dx - 14) / w : 1 - Math.max(0, dx - 14) / w;
+    g.x = g.mode === "ouvrir" ? Math.max(0, dx - 14) / w : 1 + Math.min(0, dx + 14) / w;
     poser(g.x);
   }
   function fin() {
@@ -336,7 +334,7 @@
   appli.addEventListener("touchstart", e => {
     if (T.classList.contains("vu") || bloque() || (e.target.closest && e.target.closest(IGNORER))) { g = null; return; }
     const p = e.touches[0];
-    if (p.clientX < innerWidth * 0.2) { g = null; return; }   // pas depuis le bord gauche (rien à tirer de là)
+    if (p.clientX > innerWidth * 0.8) { g = null; return; }   // pas depuis le bord droit (rien à tirer de là)
     debut(e, "ouvrir");
   }, { passive: true });
   T.addEventListener("touchstart", e => debut(e, "fermer"), { passive: true });
