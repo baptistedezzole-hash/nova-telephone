@@ -331,7 +331,7 @@
     if (!fouille.hidden) construire();
     return true;
   };
-  K.pastilles = () => past.map((p) => (p.el.hidden ? null : { i: p.i, choisie: p.el.classList.contains("choisie"), court: p.el.classList.contains("court"), rect: p.el.getBoundingClientRect().toJSON() }));
+  K.pastilles = () => past.map((p) => (p.el.hidden ? null : { i: p.i, choisie: p.el.classList.contains("choisie"), ouvert: p.ouvert, rect: p.el.getBoundingClientRect().toJSON() }));
 
   function creerFeuillet() {
     const e = U.el("div", "feuillet", livre), f = { el: e, j: 0, p: new U.Ressort(0, 140, 22), bandes: [], retard: 0, tenu: false };
@@ -624,7 +624,7 @@
     if (!ouvert || anime) return;
     poserTout();
     const n = nb(), i0 = double ? 2 * s : s, cour = k.pages[Math.min(n - 1, i0)];
-    const pg = { id: U.id("f"), type: "feuille", papier: (cour && cour.papier) || K.papier || "ligne", traits: [], v: 1 };
+    const pg = { id: U.id("f"), type: "feuille", papier: (cour && cour.papier) || K.papier || "ligne", traits: [], v: 1, cree: Date.now() };
     const i = n === 0 ? 0 : Math.min(n, i0 + 1);
     k.pages.splice(i, 0, pg); B.majClasseur(kv); P.sauver(k);
     S.jouer("feuille");
@@ -640,7 +640,41 @@
   K.fouiller = function () { if (!ouvert || anime) return; if (fouille.hidden) ouvrirFouille(); else fermerFouille(); };
   K.fouilleOuverte = () => ouvert && !fouille.hidden;
   function ouvrirFouille() { poserTout(); fouille.hidden = false; el.classList.add("fouille-la"); majBascules(); construire(); S.jouer("feuille"); }
-  function fermerFouille() { fouille.hidden = true; el.classList.remove("fouille-la"); pf = null; s = U.borne(s, 0, maxS()); majStatiques(); }
+  function fermerFouille() { menuTri.hidden = true; fouille.hidden = true; el.classList.remove("fouille-la"); pf = null; s = U.borne(s, 0, maxS()); majStatiques(); }
+  // ---------- trier : petit menu discret (récent, ancien, titre, ordre d'origine) ----------
+  const btnTri = fouille.querySelector(".trier"), menuTri = fouille.querySelector(".menu-tri");
+  const RANGS = { recent: "du plus récent au plus ancien", ancien: "du plus ancien au plus récent", titre: "par titre" };
+  function nomPage(pg) { return String(pg.titre || pg.nom || "").trim(); }
+  function majMenuTri() { const o = menuTri.querySelector('[data-tri="origine"]'); if (o) o.hidden = !(k && Array.isArray(k.ordreAvant) && k.ordreAvant.length); }
+  btnTri.addEventListener("click", (e) => { e.stopPropagation(); majMenuTri(); menuTri.hidden = !menuTri.hidden; btnTri.setAttribute("aria-expanded", String(!menuTri.hidden)); });
+  menuTri.addEventListener("click", (e) => { const b = e.target.closest("button[data-tri]"); if (!b) return; menuTri.hidden = true; K.trier(b.dataset.tri); });
+  addEventListener("pointerdown", (e) => { if (!menuTri.hidden && !(e.target.closest && e.target.closest(".menu-tri, .trier"))) menuTri.hidden = true; }, true);
+  K.trier = function (mode) {
+    if (!k) return { change: false };
+    const pages = k.pages, avant = pages.map((p) => p.id);
+    let apres;
+    if (mode === "origine") {
+      const o = Array.isArray(k.ordreAvant) ? k.ordreAvant : null;
+      if (!o) { C.dire(`« ${k.nom} » est déjà dans l'ordre d'origine`); return { change: false, mode }; }
+      const rang = new Map(o.map((id, i) => [id, i]));
+      apres = pages.map((p, i) => [p, rang.has(p.id) ? rang.get(p.id) : o.length + i]).sort((a, b) => a[1] - b[1]).map((x) => x[0]);
+    } else if (RANGS[mode]) {
+      const idx = new Map(pages.map((p, i) => [p, i]));
+      const cmp = mode === "titre"
+        ? (a, b) => { const ta = nomPage(a), tb = nomPage(b); if (!ta !== !tb) return ta ? -1 : 1; return (ta && tb ? ta.localeCompare(tb, "fr", { numeric: true, sensitivity: "base" }) : 0) || idx.get(a) - idx.get(b); }
+        : (a, b) => ((mode === "recent" ? -1 : 1) * ((a.cree || 0) - (b.cree || 0))) || idx.get(a) - idx.get(b);
+      apres = pages.slice().sort(cmp);
+    } else return { change: false };
+    const change = apres.some((p, i) => p.id !== avant[i]);
+    if (mode === "origine") k.ordreAvant = null;
+    else if (change && !(Array.isArray(k.ordreAvant) && k.ordreAvant.length)) k.ordreAvant = avant.slice(0, 1200);
+    pages.splice(0, pages.length, ...apres);
+    if (ouvert) { if (!fouille.hidden) construire(); else { s = U.borne(s, 0, maxS()); majStatiques(); } }
+    B.majClasseur(kv); P.sauver(k);
+    if (change) S.jouer("pose");
+    C.dire(mode === "origine" ? `Ordre d'origine remis dans « ${k.nom} »` : change ? `« ${k.nom} » trié ${RANGS[mode]}` : `« ${k.nom} » était déjà dans cet ordre`);
+    return { change, mode };
+  };
   function construire() {
     grille.textContent = "";
     vigs = k.pages.map((pg) => { const e = U.el("div", "vig", grille); fond(U.el("div", "im", e), pg); const g = { el: e, pg, num: U.el("b", "", e), tenu: false }; e.__g = g; return g; });
@@ -667,7 +701,7 @@
     pf = { id: e.pointerId, g, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, tenu: false, annule: false, dx: e.clientX - r.left - g.x, dy: e.clientY - r.top + grille.scrollTop - g.y };
     if (e.pointerType !== "mouse") pf.minuterie = setTimeout(() => { if (pf && pf.g === g && !pf.annule) saisir(); }, 280);   // appui long : on prend la page (sinon on fait défiler)
   });
-  function saisir() { pf.tenu = true; pf.g.tenu = true; pf.g.el.classList.add("tenu"); S.jouer("prise"); suivre(); }
+  function saisir() { pf.tenu = true; pf.g.tenu = true; pf.g.el.classList.add("tenu"); S.jouer("prise"); try { if (navigator.vibrate) navigator.vibrate(12); } catch (e) {} suivre(); }
   function suivre() {
     const g = pf.g, r = grille.getBoundingClientRect();
     const x = pf.x - r.left - pf.dx, y = pf.y - r.top + grille.scrollTop - pf.dy;
