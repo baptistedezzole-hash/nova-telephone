@@ -909,6 +909,9 @@
       return o;
     };
     const rangee = (o) => { const p = o.place && o.place.p !== BUREAU ? c.obtenir(o.place.p) : null; return p && p.type && !p.supprime ? p : null; };
+    // 26/11 : une page désignée par son identifiant exact (bouton « Lire comme partition », partition-depuis)
+    const parId = (q) => { if (typeof q !== "string" || !/^[a-z0-9]{4,20}-[a-z0-9]{4,40}$/.test(q)) return null; const o = c.obtenir(q); return o && o.type && !o.supprime ? o : null; };
+    const enBase64 = (u8) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return typeof btoa === "function" ? btoa(s) : Buffer.from(u8).toString("base64"); };
     try {
       switch (cmd && cmd.action) {
         case "creer-classeur": {                              // « crée un classeur Solfège (avec 16 feuilles) » : un seul lot
@@ -1053,10 +1056,37 @@
           r.dit = "Je joue" + (cmd.section ? " la section « " + String(cmd.section).slice(0, 40) + " »" : " la partition") + ".";
           break;
         }
+        case "annonce": {                                     // 26/11 : une phrase à afficher dans le Cartable (fin d'un travail lancé d'un bouton)
+          r.dit = String(cmd.texte || "").slice(0, 300);
+          break;
+        }
+        case "feuille-info": {                                // 26/11 « Lire comme partition » : ce qu'il faut savoir d'une page (id exact ou mots) ; avecImage = la photo en base64
+          const o = parId(cmd.quoi) || trouverPage(cmd.quoi) || trouverOuErreur(cmd.quoi, "feuille");
+          if (o.type !== "feuille") throw new Error("« " + (o.titre || o.type) + " » n'est pas une page");
+          const k = rangee(o);
+          Object.assign(r, { id: o.id, titre: o.titre || "", papier: o.papier || "", partition: !!(o.propre && o.propre.partition), classeur: k ? (k.titre || "") : "",
+            image: o.image && o.image.sha ? { sha: o.image.sha, mime: o.image.mime || "", l: o.image.l || 0, h: o.image.h || 0 } : null });
+          if (cmd.avecImage && r.image) {
+            const b = await c.image(r.image.sha);
+            if (b && b.octets && b.octets.length <= 20 * 1024 * 1024) r.imageB64 = enBase64(b.octets);
+          }
+          break;
+        }
         case "partition-maj": {                               // la vérification a corrigé le MusicXML : on remplace le blob (l'original et la photo ne bougent pas)
-          const o = trouverOuErreur(cmd.quoi, "feuille"); r.id = o.id;
-          if (!o.propre || !o.propre.partition) throw new Error("cette feuille n'est pas une partition lue");
+          const o = parId(cmd.quoi) || trouverPage(cmd.quoi) || trouverOuErreur(cmd.quoi, "feuille"); r.id = o.id;
           if (!cmd.partitionOctets || !cmd.partitionOctets.length) throw new Error("MusicXML manquant");
+          // 26/11 « convertir » : une photo de partition rangée comme page simple devient une page Partition SUR PLACE
+          // (même page, même classeur, annotations et transcription gardées ; la photo reste l'original d'un bouton)
+          if (cmd.convertir && !(o.propre && o.propre.partition)) {
+            if (o.papier !== "photo") throw new Error("seule une photo peut être lue comme partition");
+            const sha = await c.ajouterBlob(cmd.partitionOctets, "image/vnd.cartable.partition");
+            c.mettreAuPropre(o.id, Object.assign({}, o.propre || {}, { v: 2, n: (o.propre && o.propre.n) || 0, scan: true, partition: partitionInfo(sha, Object.assign({ titre: cmd.titre || o.titre }, cmd.partitionInfo)) }));
+            c.modifier(o.id, { ext_voirPropre: true });
+            r.converti = true;
+            r.dit = "« " + (o.titre || "La page") + " » est devenue une partition jouable, à la même place.";
+            break;
+          }
+          if (!o.propre || !o.propre.partition) throw new Error("cette feuille n'est pas une partition lue");
           const sha = await c.ajouterBlob(cmd.partitionOctets, "image/vnd.cartable.partition");
           const ancien = o.propre.partition;
           c.mettreAuPropre(o.id, Object.assign({}, o.propre, { partition: partitionInfo(sha, Object.assign({}, ancien, { titre: ancien.titre }, cmd.partitionInfo)) }));

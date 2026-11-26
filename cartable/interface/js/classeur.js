@@ -133,12 +133,30 @@
   const signature = () => (k ? k.pages.map((pg) => pg.id + ":" + (pg.v || 0)).join(",") + "|" + k.nom : "");
   // un petit rond « ⋯ » discret au coin de la page ; il ouvre un mini-menu Sortir / Jeter / Ranger (le geste de tirer la page reste le moyen rapide)
   const IC_R = "M4 4h6v7H4zM14 4h6v7h-6zM4 14h6v6H4zM14 14h6v6h-6z";
+  const IC_PART = "M9 18V5l11-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM20 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z";   // une double croche
+  // 26/11 « Lire comme partition » : une photo de partition rangée comme page simple devient une page Partition SUR PLACE
+  // (l'hôte PC lance cartable.py partition-depuis par le pont « apprendre », marqueur dans un faux MusicXML ; main.js inchangé)
+  const lisible = (pg) => !!(pg && pg.image && !(C.partition && C.partition.estPartition(pg)));
+  K.lirePartition = function (i) {
+    const pg = k && k.pages[i];
+    if (!pg) return false;
+    if (!lisible(pg)) { C.dire(pg.image ? "C'est déjà une partition jouable." : "Seule une photo de partition peut être lue."); return false; }
+    const h = window.cartableHote, id = (P.idNoyau && P.idNoyau(pg.id)) || pg.id;
+    if (!h || !h.partitionApprendre || !/^[a-z0-9]{4,20}-[a-z0-9]{4,40}$/.test(String(id))) {
+      C.dire("La lecture des partitions se fait sur le PC : dis à Nova « lis " + (pg.titre ? "« " + pg.titre + " »" : "cette page") + " comme partition »."); return false;
+    }
+    const xml = '<?xml version="1.0" encoding="UTF-8"?>\n<score-partwise version="3.1"><!-- cartable-lire-partition id=' + id + ' --><!-- ordre du bouton « Lire comme partition » du Cartable, pas une vraie partition --></score-partwise>\n';
+    C.dire("Je lis la partition… elle deviendra jouable ici dans une minute environ.");
+    h.partitionApprendre(xml, "lire-partition-" + id).then((r) => { if (!r || r.ok === false) C.dire("Je ne peux pas la lire ici (Nova introuvable sur ce PC)."); }, () => C.dire("Je ne peux pas la lire ici."));
+    return true;
+  };
   const past = [0, 1].map((c) => {
     const e = U.el("div", "pastille", el); e.hidden = true;
     const plus = U.el("button", "plus", e); plus.title = "Options de la page"; plus.setAttribute("aria-label", "Options de la page"); plus.setAttribute("aria-haspopup", "menu");
     plus.innerHTML = `<svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg>`;
     const menu = U.el("div", "menu-page", e); menu.setAttribute("role", "menu");
-    for (const [quoi, nom, aide, ic] of [["sortir", "Sortir", "Sortir sur le bureau", IC_P.sortir], ["jeter", "Jeter", "Jeter à la corbeille (Suppr)", IC_P.jeter], ["ranger", "Ranger, trier", "Ranger et trier les pages (Espace)", IC_R]]) {
+    for (const [quoi, nom, aide, ic] of [["sortir", "Sortir", "Sortir sur le bureau", IC_P.sortir], ["jeter", "Jeter", "Jeter à la corbeille (Suppr)", IC_P.jeter], ["ranger", "Ranger, trier", "Ranger et trier les pages (Espace)", IC_R],
+      ["partition", "Lire comme partition", "Photo de partition : en faire une page Partition jouable, à la même place", IC_PART]]) {
       const b = U.el("button", "", menu); b.dataset.quoi = quoi; b.title = aide; b.setAttribute("aria-label", aide); b.setAttribute("role", "menuitem");
       b.innerHTML = `<svg viewBox="0 0 24 24"><path d="${ic}"/></svg>`;
       U.el("span", "", b).textContent = nom;
@@ -150,7 +168,7 @@
       choix = c;
       if (b === plus) { const o = !x.ouvert; fermerMenus(); x.ouvert = o; e.classList.toggle("ouvert", o); S.jouer("pose", 0.35); return; }
       fermerMenus();
-      if (b.dataset.quoi === "jeter") K.jeterPage(x.i); else if (b.dataset.quoi === "sortir") K.sortirPage(x.i); else K.fouiller();
+      if (b.dataset.quoi === "jeter") K.jeterPage(x.i); else if (b.dataset.quoi === "sortir") K.sortirPage(x.i); else if (b.dataset.quoi === "partition") K.lirePartition(x.i); else K.fouiller();
     });
     e.addEventListener("pointerenter", () => choisir(c));
     return x;
@@ -171,6 +189,7 @@
       if (j !== p.i) { p.ouvert = false; p.el.classList.remove("ouvert"); }   // la page a changé (tournée, sortie) : menu refermé
       p.i = j; p.el.hidden = j < 0;
       if (j < 0) return;
+      const bp = p.el.querySelector('button[data-quoi="partition"]'); if (bp) bp.hidden = !lisible(k.pages[j]);
       const photo = !!k.pages[j].image, enHaut = !double || (photo && pw < 470);       // téléphone (une seule page) : en haut, loin des messages et de la pastille photo
       p.el.classList.toggle("a-gauche", !c); p.el.classList.toggle("en-haut", enHaut);
       p.el.classList.toggle("choisie", c === choix && indexVu(1 - c) >= 0);

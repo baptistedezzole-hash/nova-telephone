@@ -208,6 +208,7 @@
           }
         } else if (r.dit) C.dire(r.dit);
       }
+      if ((cmd.action === "annonce" || (cmd.action === "partition-maj" && r.converti)) && r.ok && r.dit) C.dire(r.dit);   // 26/11 « Lire comme partition »
       if (cmd.action === "envoyer-telephone" || cmd.action === "exporter") {
         const png = await pngPageCourante();
         if (png && window.cartableHote && window.cartableHote.envoyerPng) { await window.cartableHote.envoyerPng(png, cmd.action); C.dire(cmd.action === "exporter" ? "Page exportée." : "Page envoyée au téléphone."); }
