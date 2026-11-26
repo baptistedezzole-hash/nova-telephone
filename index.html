@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="1f5abab14ccf52d6">
+<meta name="nova-version" content="85bbbf57a5bdd56d">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -82,6 +82,16 @@ header .esp { flex: 1; }
 #btnLibre i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: #fff; transition: transform .2s; }
 #btnLibre.on { color: #e9d6a8; border-color: rgba(233,214,168,.45); background: rgba(233,214,168,.1); }
 #btnLibre.on i { background: #e9d6a8; } #btnLibre.on i::after { transform: translateX(11px); background: #02030a; }
+/* 2026-11-26 : la barre du haut tient toujours dans l'écran (360-430 px) : boutons jamais écrasés, textes sur une ligne, ce qui reste se compacte */
+header > * { flex: none; } header .esp { flex: 1 1 0; min-width: 0; } header #cible { flex: 0 1 auto; min-width: 0; }
+header #btnLibre, header #btnVideo { white-space: nowrap; } header #btnReglages { flex: none; }
+@media (max-width: 440px) {
+  header { gap: 6px; padding: 10px calc(10px + var(--sr, 0px)) 0 calc(12px + var(--sl, 0px)); }
+  header #btnVideo { padding: 0; width: 34px; height: 34px; justify-content: center; } header #btnVideo span { display: none; }
+  header #btnReglages { padding: 10px 0 10px 4px; }
+}
+@media (max-width: 400px) { header #marque .lbl { display: none; } header #marque { padding: 8px 6px; } }
+@media (max-width: 370px) { header #btnLibre { padding: 7px 9px; } header #btnLibre span { display: none; } }
 @keyframes entre { from { opacity: 0; transform: translateY(-6px); } }
 
 #avis { position: fixed; z-index: 8; left: calc(16px + var(--sl)); right: calc(16px + var(--sr)); top: calc(var(--st) + 56px);
@@ -359,6 +369,15 @@ header .esp { flex: 1; }
 #brouillon .vig .film { position: absolute; left: 4px; bottom: 3px; font: 600 12px/1 system-ui; text-shadow: 0 0 4px #000; pointer-events: none; }
 #envoiVideo { position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top,0px) + 48px); z-index: 61; min-width: 200px; max-width: 92vw; padding: 7px 14px; border-radius: 999px; border: 1px solid rgba(150,200,255,.55); color: #d8ecff; font: 600 13px/1.2 system-ui,sans-serif; text-align: center; display: none; background: rgba(10,22,44,.9); overflow: hidden; }
 #envoiVideo.vu { display: block; }
+/* 2026-11-26 : pile unique des bandeaux du haut (à voir, en attente d'envoi, son, chrono, vidéo, avis) : empilés, jamais l'un sur l'autre */
+#bandeaux { position: fixed; z-index: 11; left: calc(16px + var(--sl, 0px)); right: calc(16px + var(--sr, 0px)); top: calc(var(--st) + 112px);
+  display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
+#bandeaux > * { position: relative !important; left: auto !important; right: auto !important; top: auto !important; bottom: auto !important;
+  transform: none !important; margin: 0 !important; max-width: 100% !important; z-index: auto !important; pointer-events: auto; flex: none; }
+#bandeaux > #chrono { order: 1; pointer-events: none; } #bandeaux > #sonInd { order: 2; } #bandeaux > #envoiVideo { order: 3; }
+#bandeaux > #aVoir { order: 4; } #bandeaux > #sortie { order: 5; } #bandeaux > #avis { order: 6; width: 100%; }
+#bandeaux > #aVoir:active { transform: scale(.95) !important; }
+#toast { top: var(--pileBas, calc(var(--st) + 58px)); }
 #envoiVideo i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, rgba(90,150,255,.45), rgba(176,108,255,.55)); transition: width .4s; z-index: -1; }
 #brouillon .vig button { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; background: #222a44; color: #fff; border: 1px solid rgba(255,255,255,.4); font: 700 13px/1 system-ui; display: grid; place-items: center; }
 #brouillon .ajout { flex: none; width: 64px; height: 64px; border-radius: 10px; border: 1px dashed rgba(255,255,255,.35); color: #ddd; font: 600 26px system-ui; display: grid; place-items: center; }
@@ -588,6 +607,27 @@ a.lien .lienFl { flex: none; font-size: 22px; line-height: 1; color: var(--or); 
 <input type="file" id="fichierGalerie" accept="image/*,video/*" multiple hidden>
 <input type="file" id="fichierVideo" accept="video/*" hidden>
 <div id="envoiVideo" role="status" aria-live="polite"><i></i><span></span></div>
+<div id="bandeaux"></div>
+<script>
+// 2026-11-26 : chaque bandeau du haut (créé ici ou par avoir.js) est rangé dans #bandeaux, sous la ligne des agents.
+(() => {
+  const P = document.getElementById("bandeaux"), IDS = ["avis", "envoiVideo", "chrono", "sonInd", "sortie", "aVoir"];
+  const placer = () => {
+    const sc = document.getElementById("scene"), h = document.querySelector("header");
+    let t = 0;
+    if (sc && sc.offsetParent !== null) t = sc.getBoundingClientRect().top + 58;
+    if (h) t = Math.max(t, h.getBoundingClientRect().bottom + 6);
+    if (t > 0) P.style.top = Math.round(t) + "px";
+    document.documentElement.style.setProperty("--pileBas", Math.round(P.getBoundingClientRect().bottom + 6) + "px");
+  };
+  const ranger = () => { for (const id of IDS) { const e = document.getElementById(id); if (e && e.parentNode !== P) P.appendChild(e); } placer(); };
+  new MutationObserver(ranger).observe(document.body, { childList: true });
+  addEventListener("DOMContentLoaded", () => { const sc = document.getElementById("scene"); if (sc) new MutationObserver(ranger).observe(sc, { childList: true }); ranger(); });
+  addEventListener("resize", placer); addEventListener("load", ranger);
+  if (window.ResizeObserver) new ResizeObserver(placer).observe(P);
+  ranger();
+})();
+</script>
 <div id="choixImage" style="display:none"><button type="button" id="cPhoto">📷 Prendre une photo</button><button type="button" id="cGalerie">🖼 Galerie / capture</button><button type="button" id="cVideo">🎬 Vidéo</button></div>
 <div id="visionneuse" role="dialog" aria-label="Image"><img alt=""><button type="button" aria-label="Fermer">×</button></div>
 <div id="brouillon" aria-label="Images à envoyer"></div>
