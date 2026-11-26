@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="a5e23b865f1feadf">
+<meta name="nova-version" content="77a640d621d9ea23">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -346,6 +346,14 @@ header #btnLibre, header #btnVideo { white-space: nowrap; } header #btnReglages 
 .msg.nova .qui { color: rgba(233, 214, 168, .62); }
 .msg.nova:active { border-color: rgba(233, 214, 168, .45); background: linear-gradient(180deg, rgba(233, 214, 168, .14), rgba(233, 214, 168, .06)); }
 .msg.toi + .msg.toi, .msg.nova + .msg.nova { margin-top: -3px; }
+/* 2026-11-26 bulle longue : repliée, « Plus… » la déplie en entier, « Moins » la replie (fil et historique) */
+.long:not(.deplie) > .txt { display: block; max-height: 12.5em; overflow: hidden;
+  -webkit-mask-image: linear-gradient(#000 68%, transparent); mask-image: linear-gradient(#000 68%, transparent); }
+.long > .txt { display: block; }
+button.plus { display: block; margin: 6px 0 0 auto; padding: 5px 13px; border-radius: 999px; font: 600 13px/1.2 system-ui, sans-serif;
+  color: rgba(222, 234, 255, .92); background: rgba(169, 200, 255, .12); border: 1px solid rgba(169, 200, 255, .32); cursor: pointer; }
+.nova > button.plus { color: rgba(240, 226, 190, .95); background: rgba(233, 214, 168, .1); border-color: rgba(233, 214, 168, .34); }
+button.plus:active { transform: scale(.96); }
 .msg.info { align-self: center; max-width: 92%; padding: 4px 11px; border: 0; background: none;
   text-align: center; font-size: 12.5px; color: var(--txt3); }
 .msg.ancien { opacity: .6; }
@@ -1491,7 +1499,20 @@ function nettoyerTel(t) {
   if (m) return { texte: m[1] ? "📷 " + m[1] : "📷 image envoyée", brut: true };
   return { texte: r, brut: true };
 }
-const cleFil = t => String(t || "").toLowerCase().replace(/[*_`#]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim().slice(0, 120);
+// 2026-11-26 texte collé : les balises <pasted_content id="…"> ne s'affichent jamais, le texte reste
+const sansColle = t => String(t == null ? "" : t).replace(/<\/?pasted_content(?:\s[^>]*)?>/gi, "").trim();
+function plierLong(b, cont, texte) {   // bulle longue : repliée + bouton « Plus… » / « Moins » (l'état reste si la bulle se redessine)
+  texte = String(texte || "");
+  if (texte.length <= 520 && (texte.match(/\n/g) || []).length <= 9) { b.classList.remove("long", "deplie"); return; }
+  cont.classList.add("txt"); b.classList.add("long"); const o = !!b.dataset.deplie; b.classList.toggle("deplie", o);
+  const k = el("button", "plus", o ? "Moins" : "Plus…"); k.type = "button";
+  k.addEventListener("click", ev => { ev.stopPropagation(); ev.preventDefault();
+    const d = !b.classList.contains("deplie"); b.classList.toggle("deplie", d);
+    if (d) b.dataset.deplie = "1"; else { delete b.dataset.deplie; try { b.scrollIntoView({ block: "nearest" }); } catch (x) {} }
+    k.textContent = d ? "Moins" : "Plus…"; try { vib(6); } catch (x) {} });
+  b.appendChild(k);
+}
+const cleFil = t => String(t || "").replace(/^\s*\[[^\]]{0,80}\]\s*/, "").toLowerCase().replace(/[*_`#]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim().slice(0, 120);
 // Le **gras** de Nova : uniquement des nœuds texte et <strong>, donc aucun HTML du message n'est jamais interprété.
 function poserGras(n, t) {
   const R = /\*\*(\S(?:[^\n]*?\S)?)\*\*/g; let i = 0, m;
@@ -1572,6 +1593,7 @@ function poserTexte(n, t) {
 }
 const sansLiens = t => String(t || "").replace(/\[([^\]\n]{1,200})\]\((https?:\/\/[^\s)]+)\)/gi, "$1").replace(/https?:\/\/[^\s<>"'`]+/gi, "le lien");
 function afficher(e) {
+  if (typeof e.texte === "string" && /pasted_content/i.test(e.texte)) e = Object.assign({}, e, { texte: sansColle(e.texte) });
   if (typeof e.texte === "string") { const n = nettoyerTel(e.texte); if (n.brut) e = Object.assign({}, e, { texte: n.texte, brut: true }); }
   if (e.mid && e.qui === "toi" && !e.loc && enAttente(e.mid)) e = Object.assign({}, e, { loc: "attente" });   // revenu du PC mais pas encore pris par Nova : il reste en attente
   if (e.mid && e.qui === "toi" && !entrees.has(e.id) && entrees.has("loc-" + e.mid)) { entrees.set(e.id, entrees.get("loc-" + e.mid)); entrees.delete("loc-" + e.mid); }   // mon message, revenu du PC
@@ -1581,8 +1603,8 @@ function afficher(e) {
   if (m && m.dataset.vignette) return;   // la bulle avec la photo reste telle quelle
   if (!m && e.qui === "toi") {   // même message revenu sous son autre forme : il prend la bulle déjà là (une seule fois par bulle)
     const kf = cleFil(e.texte), ec = e.conv || "nova";
-    const j = [...fil.children].slice(-12).find(v => v.classList.contains("toi") && v.dataset.conv === ec && v.dataset.kf === kf && (e.brut ? !v.dataset.vuBrut : v.dataset.vignette === "1"));
-    if (j) { entrees.set(e.id, j); if (e.brut) j.dataset.vuBrut = "1"; else j.dataset.vignette = "2"; return; }
+    const j = [...fil.children].slice(-12).find(v => v.classList.contains("toi") && v.dataset.conv === ec && v.dataset.kf === kf && ((e.brut ? !v.dataset.vuBrut : v.dataset.vignette === "1") || (String(e.texte).length > 200 && !v.dataset.fus)));
+    if (j) { entrees.set(e.id, j); if (j.dataset.vignette !== "1" && !(e.brut && !j.dataset.vuBrut) && String(e.texte).length > 200) j.dataset.fus = "1"; else if (e.brut) j.dataset.vuBrut = "1"; else j.dataset.vignette = "2"; return; }   // 26/11 : un long message (texte collé) revenu sous une autre forme = même bulle
   }
   if (!m) {
     m = document.createElement("div"); entrees.set(e.id, m);
@@ -1596,7 +1618,7 @@ function afficher(e) {
   m.style.display = m.dataset.conv === conv ? "" : "none";
   m.innerHTML = "";
   if (e.qui !== "info") { const c = convs.find(x => x.id === m.dataset.conv); m.appendChild(el("span", "qui lbl", e.qui === "toi" ? "toi" : (m.dataset.conv === "nova" ? "Nova" : (c ? c.titre : "réponse")))); }
-  if (e.qui !== "info") poserTexte(m, e.texte); else m.appendChild(document.createTextNode(e.texte));
+  if (e.qui !== "info") { const tx = el("span", ""); poserTexte(tx, e.texte); m.appendChild(tx); plierLong(m, tx, e.texte); } else m.appendChild(document.createTextNode(e.texte));
   m.dataset.kf = cleFil(e.texte); if (e.brut) m.dataset.vuBrut = "1";
   m.dataset.e = JSON.stringify({ texte: e.texte });
   while (fil.children.length > 120) { const x = fil.firstChild; entrees.forEach((v, k) => { if (v === x) entrees.delete(k); }); x.remove(); }
@@ -3026,7 +3048,7 @@ if (!window.isSecureContext) avis("Ouvre cette page en https:// pour que le micr
 // ids changent à chaque redémarrage de Nova) sont reconnus par leur texte et ne sont ajoutés que s'ils manquent.
 // =====================================================================================================
 window.NovaHisto = (() => {
-  const MAX = 300, MAXT = 4000, CLE_OUVERT = "nova-histo";
+  const MAX = 300, MAXT = 12000, CLE_OUVERT = "nova-histo";
   const listes = new Map(), curseur = new Map(), noeuds = new Map(), attente = [];
   const corps = $("histoCorps"), filH = $("histoFil"), pastille = $("histoBas"), app = $("app");
   let affichee = null, pret = false, db = null, minuterie = 0;
@@ -3067,6 +3089,7 @@ window.NovaHisto = (() => {
   function reparer(L) {
     let change = false;
     for (const x of L) {
+      if (/pasted_content/i.test(x.texte)) { x.texte = sansColle(x.texte); x.k = cle(x.qui, x.texte); change = true; }
       const n = nettoyerTel(x.texte);
       if (n.brut) { x.texte = n.texte; x.k = cle(x.qui, x.texte); x.b = 1; change = true; }
       else if (x.t && !x.b) x.c = 1;
@@ -3079,6 +3102,11 @@ window.NovaHisto = (() => {
       const a = L[Math.min(i, j)], z = L[Math.max(i, j)];
       a.t = a.t && z.t ? Math.min(a.t, z.t) : (a.t || z.t); a.b = a.c = 1; a.al = [...(a.al || []), z.id, ...(z.al || [])];
       L.splice(Math.max(i, j), 1); change = true; i = -1;
+    }
+    for (let i = L.length - 1; i > 0; i--) {   // 26/11 : un long message en double (clair + texte collé) = un seul
+      const x = L[i]; if (x.qui !== "toi" || x.texte.length <= 200) continue;
+      const j = L.findIndex((y, n) => n < i && n >= i - 6 && y.qui === "toi" && y.k === x.k && (!y.t || !x.t || Math.abs(y.t - x.t) < 180));
+      if (j >= 0) { const y = L[j]; y.al = [...(y.al || []), x.id, ...(x.al || [])]; if (x.b) y.b = 1; if (x.c) y.c = 1; L.splice(i, 1); change = true; }
     }
     let maxT = 0;
     for (let i = 0; i < L.length; i++) {
@@ -3130,7 +3158,7 @@ window.NovaHisto = (() => {
       if (!texte) return;
       const t = document.createElement("span"); t.textContent = texte; b.appendChild(t); return;
     }
-    if (x.qui !== "info") poserTexte(b, texte); else b.textContent = texte;
+    if (x.qui !== "info") { const tx = el("span", ""); poserTexte(tx, texte); b.appendChild(tx); plierLong(b, tx, texte); } else b.textContent = texte;
   }
   function titre() {
     const c = (typeof convs !== "undefined" && convs.find(y => y.id === affichee)) || null;
@@ -3162,7 +3190,7 @@ window.NovaHisto = (() => {
   function recevoir(e) {
     if (!e || e.id == null || typeof e.texte !== "string" || !e.texte.trim() || !/^(toi|nova|info)$/.test(e.qui)) return;
     if (!pret) { attente.push(e); return; }
-    const c = String(e.conv || "nova"), id = String(e.id), texte = e.texte.slice(0, MAXT), k = cle(e.qui, texte);
+    const c = String(e.conv || "nova"), id = String(e.id), texte = sansColle(e.texte).slice(0, MAXT), k = cle(e.qui, texte);
     if (!listes.has(c)) listes.set(c, []);
     const L = listes.get(c), d = curseur.has(c) ? curseur.get(c) : -1, ici = c === affichee;
     if (e.mid && e.qui === "toi" && !L.some(y => y.id === id)) {   // 2026-11-23 fiable : mon message revenu du PC = la bulle déjà affichée
@@ -3192,7 +3220,7 @@ window.NovaHisto = (() => {
       x.ancien = true; ou = d + 1; curseur.set(c, ou);
     } else if (!x.tmp) {   // en direct : le même message que le précédent, revenu avec un autre id ? (rare)
       if (x.qui === "toi") {   // sa forme propre et sa forme brute = UN message ; deux envois voulus (même forme) restent deux bulles
-        const y = L.find(y => y.qui === "toi" && y.k === k && (x.b ? !y.b : !y.c) && (!y.t || Math.abs(y.t - x.t) < 180));
+        const y = L.find(y => y.qui === "toi" && y.k === k && ((x.b ? !y.b : !y.c) || texte.length > 200) && (!y.t || Math.abs(y.t - x.t) < 180));
         if (y) { if (!y.t) y.t = x.t; if (x.b) y.b = 1; else y.c = 1; (y.al = y.al || []).push(id); sauver(c); return; }
       }
       const der = L[L.length - 1];
