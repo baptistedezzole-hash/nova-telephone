@@ -4,11 +4,11 @@
 //  - ne touche JAMAIS une autre adresse (le PC, la boîte aux lettres, les images) : appli.js s'en occupe.
 // Publié par outils/telephone_pages.py sous le nom « sw.js » (portée = le dossier de l'appli).
 const VERSION = "nova-pages-1";
-const REVISION = "2026-11-25-applis";   // changer cette ligne = les téléphones reprennent la coquille (le cache garde son nom)
+const REVISION = "2026-11-26-labo";   // changer cette ligne = les téléphones reprennent la coquille (le cache garde son nom)
 const RACINE = new URL("./", self.location.href).pathname;
 const COQUILLE = ["", "index.html", "appli.js", "reveil.html", "video.js", "bureau.js", "montrer.js", "manifest.webmanifest",
   "icone-180.png", "icone-192.png", "icone-512.png", "icone-masquable-192.png", "icone-masquable-512.png",
-  "cartable-tel.js", "applis.js", "lecture.html"].map(f => RACINE + f);   // 25/11 (5) : tiroir Applis + Lecture de notes hors ligne
+  "cartable-tel.js", "applis.js", "lecture.html", "labo.html"].map(f => RACINE + f);   // 25/11 (5) : tiroir Applis + Lecture de notes hors ligne
 // 25/11 : le Cartable (cartable/…) est gardé en entier pour s'ouvrir hors ligne ; sa liste est dans cartable/liste.json.
 const CARTABLE = RACINE + "cartable/";
 
@@ -67,7 +67,7 @@ self.addEventListener("fetch", e => {
   if (u.pathname === RACINE + "sw.js" || u.pathname === RACINE + "version.json") return;
   if (r.mode === "navigate") {
     const p = u.pathname === RACINE || u.pathname === RACINE + "index.html" ? RACINE : u.pathname;
-    if (p === RACINE || p === RACINE + "reveil.html" || p === RACINE + "lecture.html") e.respondWith(servir(e, p));
+    if (p === RACINE || p === RACINE + "reveil.html" || p === RACINE + "lecture.html" || p === RACINE + "labo.html") e.respondWith(servir(e, p));
     else if (p.startsWith(CARTABLE + "interface/")) e.respondWith(servir(e, p.endsWith("/") ? p + "index.html" : p));
     return;
   }

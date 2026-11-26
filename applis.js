@@ -25,12 +25,14 @@
     pc: '<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/>',
     video: '<circle cx="12" cy="12" r="3.2"/><path d="M4 8.5A2 2 0 0 1 6 6.5h2l1.5-2h5l1.5 2h2a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/>',
     montre: '<path d="M12 4v4M12 16v4M4 12h4M16 12h4M7 7l2 2M15 15l2 2M17 7l-2 2M9 15l-2 2"/>',
+    labo: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l5.5-5.5"/><circle cx="15.5" cy="15" r="1.1" fill="currentColor"/><circle cx="8" cy="9.5" r="1" fill="currentColor"/>',
     grille: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8"/>',
   };
   // Applis gardées DANS l'appli (GitHub Pages + service worker) : marchent sans réseau.
   const LOCALES = [
     { cle: "cartable", titre: "Cartable", ic: "cartable", teinte: "#e7a35c", url: "cartable/interface/index.html", hl: true },
     { cle: "lecture", titre: "Lecture de notes", ic: "lecture", teinte: "#8fd8ff", url: "lecture.html", hl: true, micro: true },
+    { cle: "labo", titre: "Labo Netrunner", ic: "labo", teinte: "#3df2e0", url: "labo.html", hl: true },   // 26/11 : mesures servies par le PC
   ];
   // Applis du PC (le PC dit lesquelles existent) : icônes et couleurs seulement ici.
   const PC = {
