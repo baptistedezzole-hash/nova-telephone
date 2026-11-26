@@ -34,6 +34,8 @@
     { cle: "lecture", titre: "Lecture de notes", ic: "lecture", teinte: "#8fd8ff", url: "lecture.html", hl: true, micro: true },
     { cle: "labo", titre: "Labo Netrunner", ic: "labo", teinte: "#3df2e0", url: "labo.html", hl: true },   // 26/11 : mesures servies par le PC
   ];
+  // 26/11 : Labo Netrunner autonome = appli Android (le téléphone scanne lui-même, sans le PC), publiée avec l'appli.
+  const APK_LABO = "https://baptistedezzole-hash.github.io/nova-telephone/labo-netrunner-tel.apk";
   // Applis du PC (le PC dit lesquelles existent) : icônes et couleurs seulement ici.
   const PC = {
     "atelier-yuno": { titre: "Atelier Yuno musique", court: "Atelier musique", ic: "yuno", teinte: "#ff4fd8" },
@@ -100,6 +102,12 @@
 #applis .app.charge .ic::after { content:""; position:absolute; inset:-4px; border-radius:23px; border:2px solid transparent;
   border-top-color:var(--t); animation:applisTourne .9s linear infinite; }
 @keyframes applisTourne { to { transform:rotate(360deg); } }
+#applis .autonome { margin:14px 4px 0; display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:16px; text-decoration:none;
+  color:#3df2e0; font:500 13px/1.3 var(--sans,system-ui); background:linear-gradient(160deg,rgba(61,242,224,.10),rgba(61,242,224,.03));
+  box-shadow:inset 0 0 0 1px rgba(61,242,224,.32); -webkit-tap-highlight-color:transparent; }
+#applis .autonome svg { flex:none; width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+#applis .autonome small { display:block; color:rgba(214,224,255,.5); font-size:11px; }
+#applis .autonome:active { transform:scale(.98); }
 #applis .note { margin:22px 6px 0; font-size:12px; line-height:1.45; color:rgba(214,224,255,.45); }
 #applisMot { position:fixed; z-index:2147483600; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 28px); transform:translate(-50%,20px);
   max-width:calc(100vw - 40px); padding:12px 18px; border-radius:16px; font:500 14px/1.35 var(--sans,system-ui); color:#f4efff; opacity:0;
@@ -126,6 +134,7 @@
   const T = document.createElement("aside"); T.id = "applis"; T.setAttribute("aria-label", "Applis"); T.setAttribute("aria-hidden", "true");
   T.innerHTML = `<div class="tete"><div class="lbl">Nova</div><h2>Applis</h2><div class="etatPc"><i></i><span>…</span></div></div>
 <div class="corps"><h3>Sur le téléphone</h3><div class="grille" data-g="locales"></div>
+<a class="autonome" href="${APK_LABO}" target="_blank" rel="noopener" data-cle="labo-appli"><svg viewBox="0 0 24 24" aria-hidden="true">${IC.labo}</svg><span>Labo Netrunner : version autonome (appli)<small>Le téléphone scanne lui-même, sans le PC</small></span></a>
 <h3>Depuis le PC</h3><div class="grille" data-g="pc"></div>
 <h3>Raccourcis</h3><div class="grille" data-g="raccourcis"></div>
 <p class="note">Glisse vers la droite pour revenir ici. « Hors ligne » marche sans réseau ; « PC » demande le PC allumé.</p></div>`;
