@@ -106,10 +106,31 @@
   // le blanc prend la couleur, le texte noir reste noir (le surlignage passe sous le texte), et repasser au même endroit ne fonce pas.
   T.SURLIGNEURS = ["#fff27a", "#b6f2a0", "#ffbfdc", "#a9dcff"];
   T.largeurSur = (taille) => Math.round(6 + 6 * (taille || 2.6));
-  function debutSur(g, t, k) { g.save(); g.globalCompositeOperation = "darken"; g.globalAlpha = 1; g.strokeStyle = t.c; g.lineCap = "round"; g.lineJoin = "round"; g.lineWidth = Math.max(1, t.e * k); }
-  T.dessinerSurligne = function (g, t, k) {
+  // Page à fond sombre (paroles en style nuit) : « darken » n'y ferait rien. On peint alors en « lighten » une teinte sombre de la couleur :
+  // le fond s'éclaire, le texte clair reste clair. Mesuré une fois par image.
+  T.pageSombre = function (o) {
+    if (!o || !o.image) return false;
+    const e = images.get(o.image); if (!e || !e.pret) return false;
+    if (e.sombre === undefined) {
+      try {
+        const c = document.createElement("canvas"); c.width = c.height = 12;
+        const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(e.img, 0, 0, 12, 12);
+        const d = g.getImageData(0, 0, 12, 12).data; let s = 0;
+        for (let i = 0; i < d.length; i += 4) s += 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
+        e.sombre = s / 144 < 95;
+      } catch (x) { e.sombre = false; }
+    }
+    return e.sombre;
+  };
+  const teinteSombre = (c) => { const n = parseInt(c.slice(1), 16); return "rgb(" + [n >> 16, (n >> 8) & 255, n & 255].map((v) => Math.round(v * 0.46)).join(",") + ")"; };
+  function debutSur(g, t, k, o) {
+    const sombre = T.pageSombre(o);
+    g.save(); g.globalCompositeOperation = sombre ? "lighten" : "darken"; g.globalAlpha = 1; g.strokeStyle = sombre ? teinteSombre(t.c) : t.c;
+    g.lineCap = "round"; g.lineJoin = "round"; g.lineWidth = Math.max(1, t.e * k);
+  }
+  T.dessinerSurligne = function (g, t, k, o) {
     const p = t.p, n = p.length / 3; if (n < 1) return;
-    debutSur(g, t, k);
+    debutSur(g, t, k, o);
     g.beginPath(); g.moveTo(p[0] * k, p[1] * k);
     if (n === 1) g.lineTo(p[0] * k + 0.01, p[1] * k);
     else {
@@ -118,11 +139,11 @@
     }
     g.stroke(); g.restore();
   };
-  T.dessinerSurlignes = function (g, traits, k) { if (traits) for (const t of traits) if (t.s) T.dessinerSurligne(g, t, k); };
+  T.dessinerSurlignes = function (g, traits, k, o) { if (traits) for (const t of traits) if (t.s) T.dessinerSurligne(g, t, k, o); };   // o = la page (fond sombre ?)
   // pendant qu'on surligne : le bout qui se termine au point i
-  T.morceauSur = function (g, t, i, k) {
+  T.morceauSur = function (g, t, i, k, o) {
     const p = t.p, a = 3 * Math.max(0, i - 1), b = 3 * i;
-    debutSur(g, t, k);
+    debutSur(g, t, k, o);
     g.beginPath(); g.moveTo(p[a] * k, p[a + 1] * k); g.lineTo(p[b] * k + (a === b ? 0.01 : 0), p[b + 1] * k); g.stroke(); g.restore();
   };
   // la gomme touche-t-elle ce surlignage ? (distance aux segments, pas seulement aux points : un trait redressé n'a que deux points)
@@ -191,8 +212,8 @@
     } else if (!cadre) T.dessinerPapier(g, l, h, o.papier);
     else { g.save(); g.beginPath(); g.rect(0, 0, ol * k, oh * k); g.clip(); T.dessinerPapier(g, ol * k, oh * k, o.papier); g.restore(); }
     if (!options.sansEncre) {
-      if (o.propre && o.voirPropre) { T.dessinerPropre(g, o.propre, k, o); T.dessinerSurlignes(g, o.traits, k); if (o.traits) T.dessinerTraits(g, o.traits.slice(o.propre.n || 0), k); }   // ce qui a été écrit après reste par-dessus
-      else { T.dessinerSurlignes(g, o.traits, k); T.dessinerTraits(g, o.traits, k); }
+      if (o.propre && o.voirPropre) { T.dessinerPropre(g, o.propre, k, o); T.dessinerSurlignes(g, o.traits, k, o); if (o.traits) T.dessinerTraits(g, o.traits.slice(o.propre.n || 0), k); }   // ce qui a été écrit après reste par-dessus
+      else { T.dessinerSurlignes(g, o.traits, k, o); T.dessinerTraits(g, o.traits, k); }
     }
     g.setTransform(1, 0, 0, 1, 0, 0);
     return c;

@@ -53,7 +53,7 @@
   let surPeint = false;
   const aSur = () => !!(o && o.traits && o.traits.some((t) => t.s));
   const proOpaque = () => !!(o && o.image && o.propre);     // photo au propre : le scan net recouvre le papier, le surlignage y est peint aussi
-  function peindrePapier() { T.rendrePage(o, cPap.width, { toile: cPap, sansEncre: true }); T.dessinerSurlignes(gPap, o.traits, k); surPeint = aSur(); }
+  function peindrePapier() { T.rendrePage(o, cPap.width, { toile: cPap, sansEncre: true }); T.dessinerSurlignes(gPap, o.traits, k, o); surPeint = aSur(); }
   function peindreTout() {
     peindrePapier();
     dessinerPropre(); redessinerEncre();
@@ -61,7 +61,7 @@
   }
   function dessinerPropre() {
     gP.setTransform(1, 0, 0, 1, 0, 0); gP.clearRect(0, 0, cPro.width, cPro.height);
-    if (o.propre) { T.dessinerPropre(gP, o.propre, k, o); gP.setTransform(1, 0, 0, 1, 0, 0); if (proOpaque()) T.dessinerSurlignes(gP, o.traits, k); }
+    if (o.propre) { T.dessinerPropre(gP, o.propre, k, o); gP.setTransform(1, 0, 0, 1, 0, 0); if (proOpaque()) T.dessinerSurlignes(gP, o.traits, k, o); }
     if (ouvert && !anime) planifierNet(60);
   }
   function redessiner() {
@@ -108,8 +108,8 @@
       gN.imageSmoothingEnabled = true; gN.imageSmoothingQuality = "high";
       gN.drawImage(e.img, 0, 0, L, H);
     } else T.dessinerPapier(gN, L, H, o.papier);
-    if (o.voirPropre && o.propre) { T.dessinerPropre(gN, o.propre, K, o); gN.setTransform(1, 0, 0, 1, -net.ox, -net.oy); T.dessinerSurlignes(gN, o.traits, K); T.dessinerTraits(gN, o.traits.slice(o.propre.n || 0), K); }
-    else { T.dessinerSurlignes(gN, o.traits, K); T.dessinerTraits(gN, o.traits, K); }
+    if (o.voirPropre && o.propre) { T.dessinerPropre(gN, o.propre, K, o); gN.setTransform(1, 0, 0, 1, -net.ox, -net.oy); T.dessinerSurlignes(gN, o.traits, K, o); T.dessinerTraits(gN, o.traits.slice(o.propre.n || 0), K); }
+    else { T.dessinerSurlignes(gN, o.traits, K, o); T.dessinerTraits(gN, o.traits, K); }
     gN.setTransform(1, 0, 0, 1, -net.ox, -net.oy);
     return true;
   }
@@ -201,9 +201,9 @@
   }
   function morceauSur(i) {
     const t = trait.t;
-    T.morceauSur(gPap, t, i, k);
-    if (proOpaque()) T.morceauSur(gP, t, i, k);
-    if (net) T.morceauSur(gN, t, i, net.K);
+    T.morceauSur(gPap, t, i, k, o);
+    if (proOpaque()) T.morceauSur(gP, t, i, k, o);
+    if (net) T.morceauSur(gN, t, i, net.K, o);
   }
   // un surlignage presque droit est redressé : une bande bien horizontale sous la ligne de texte
   function redresser(t) {
