@@ -403,18 +403,25 @@
     if (x) return x.p;
     x = { u: "" };
     x.p = (async () => {
-      const im = new Image(); im.decoding = "async"; im.src = url;
-      await im.decode();
       let u = url;
-      const e = Math.max(w / im.naturalWidth, h / im.naturalHeight);
-      if (e < 0.85 && window.createImageBitmap) {
-        try {
-          const bm = await createImageBitmap(im, { resizeWidth: Math.round(im.naturalWidth * e), resizeHeight: Math.round(im.naturalHeight * e), resizeQuality: "high" });
-          const cv = document.createElement("canvas"); cv.width = bm.width; cv.height = bm.height; cv.getContext("2d").drawImage(bm, 0, 0); bm.close && bm.close();
-          const bl = await new Promise((ok) => cv.toBlob(ok, "image/jpeg", 0.9));
-          if (bl) { u = URL.createObjectURL(bl); const im2 = new Image(); im2.src = u; await im2.decode(); }
-        } catch (er) { u = url; }
-      }
+      try {                                                  // tout hors du fil principal : lecture, décodage, réduction, encodage
+        let bm0, iw, ih;
+        if (/^https?:/i.test(new URL(url, location.href).protocol)) { bm0 = await createImageBitmap(await (await fetch(url)).blob()); iw = bm0.width; ih = bm0.height; }
+        else { bm0 = new Image(); bm0.decoding = "async"; bm0.src = url; await bm0.decode(); iw = bm0.naturalWidth; ih = bm0.naturalHeight; }   // blob:, data:, file:// (sans fetch : la CSP le bloque)
+        const e = Math.max(w / iw, h / ih), rw = Math.round(iw * e), rh = Math.round(ih * e);
+        if (e < 0.85) {
+          const bm = await createImageBitmap(bm0, { resizeWidth: rw, resizeHeight: rh, resizeQuality: "high" });
+          let bl;
+          if (window.OffscreenCanvas) { const cv = new OffscreenCanvas(rw, rh); cv.getContext("2d").drawImage(bm, 0, 0); bl = await cv.convertToBlob({ type: "image/jpeg", quality: 0.9 }); }
+          else { const cv = document.createElement("canvas"); cv.width = rw; cv.height = rh; cv.getContext("2d").drawImage(bm, 0, 0); bl = await new Promise((ok) => cv.toBlob(ok, "image/jpeg", 0.9)); }
+          bm.close && bm.close();
+          if (bl) u = URL.createObjectURL(bl);
+        }
+        bm0.close && bm0.close();
+      } catch (er) { u = url; }
+      const im = new Image(); im.decoding = "async"; im.src = u;   // décodée d'avance : elle s'affiche sans attendre
+      try { await im.decode(); } catch (er) {}
+      x.im = im;                                             // gardée en mémoire tant que la couverture sert
       x.u = u; return u;
     })().catch(() => { x.u = url; return url; });
     couvPretes.set(cle, x);
@@ -429,13 +436,19 @@
     tranquille(suite);
   };
   const tranquille = (f) => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 2500 }) : setTimeout(f, 200));
+  // une couverture toute neuve se réduit une fois, quand rien ne bouge (jamais pendant une page qui tourne)
+  let geste = 0;
+  for (const t of ["pointerdown", "pointerup", "wheel", "keydown"]) window.addEventListener(t, () => { geste = performance.now(); }, { capture: true, passive: true });
+  const auCalme = (f) => setTimeout(() => {
+    const essai = (d) => (anime || vols.length || ptr || performance.now() - geste < 2500 || (d && !d.didTimeout && d.timeRemaining() < 30) ? auCalme(f) : f());
+    window.requestIdleCallback ? requestIdleCallback(essai) : essai();
+  }, 1500);
   setTimeout(() => K.prechargerCouvertures(), 1500);
-  function poserCouv() {
+  setInterval(() => { if (!ouvert && !document.hidden) K.prechargerCouvertures(); }, 10000);   // une couverture changée : prête avant la prochaine ouverture
+  function poserCouv() {                                     // (pas encore prête : l'originale, et la réduite une fois le livre posé)
     const url = k.couv || "", u = couvPrete(url);
     couvExt.classList.toggle("image", !!url);
-    if (!url) { couvExt.style.backgroundImage = ""; return; }
-    couvExt.style.backgroundImage = `url("${u || url}")`;
-    if (!u) { const kk = k; preparerCouv(url).then((v) => { if (k === kk && !anime && v) couvExt.style.backgroundImage = `url("${v}")`; }); }
+    couvExt.style.backgroundImage = url ? `url("${u || url}")` : "";
   }
   // pendant l'ouverture et la fermeture : le livre devient un seul calque qui glisse et grandit, sans rien redessiner
   const bouge = (oui) => el.classList.toggle("bouge", oui);
@@ -466,7 +479,7 @@
       voile.style.opacity = Math.min(1, t * 2).toFixed(3);
     }, () => {
       anime = false; livre.style.transform = ""; bouge(false); majBascules();
-      if (k) { precharger(); const kk = k; if (kk.couv && !couvPrete(kk.couv)) preparerCouv(kk.couv).then((u) => { if (k === kk && u) couvExt.style.backgroundImage = `url("${u}")`; }); }
+      if (k) { precharger(); const kk = k; if (kk.couv && !couvPrete(kk.couv)) auCalme(() => preparerCouv(kk.couv).then((u) => { if (k === kk && u && !anime) couvExt.style.backgroundImage = `url("${u}")`; })); }
     });
     return true;
   };
