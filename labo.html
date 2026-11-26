@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#05080c">
+<title>Labo Netrunner</title>
+<!-- 2026-11-26 Labo Netrunner dans l'appli Nova du téléphone (tiroir Applis).
+     La page elle-même ne contient AUCUNE donnée : tout ce qui est réel vient du PC (GET /api/montrer/labo, clé de
+     l'appareil déjà relié). Sans PC : « Besoin du PC allumé ». Le cadre légal est lisible hors ligne.
+     Lecture seule : aucune action active (pentest) depuis le téléphone. -->
+<style>
+:root { --fond:#05080c; --panneau:rgba(8,16,22,.78); --teal:#3df2e0; --violet:#b07bff; --rouge:#ff4d6d; --vert:#4dffa0;
+  --ambre:#ffc857; --bleu:#2fc8ff; --texte:#d6f7f3; --discret:#6f9a9a; --bord:rgba(61,242,224,.28);
+  --mono:"Cascadia Mono","Cascadia Code",Consolas,"Roboto Mono","DejaVu Sans Mono",monospace;
+  --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px); --sal:env(safe-area-inset-left,0px); --sar:env(safe-area-inset-right,0px); }
+* { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html, body { margin:0; height:100%; background:var(--fond); color:var(--texte); font:13px/1.4 var(--mono); overflow:hidden; }
+body { background:
+  linear-gradient(rgba(61,242,224,.05) 1px,transparent 1px) 0 0/40px 40px,
+  linear-gradient(90deg,rgba(61,242,224,.05) 1px,transparent 1px) 0 0/40px 40px,
+  radial-gradient(120% 80% at 50% 0%,rgba(61,242,224,.08),transparent 60%),
+  radial-gradient(100% 60% at 100% 100%,rgba(176,123,255,.08),transparent 60%), var(--fond); }
+body::after { content:""; position:fixed; inset:0; pointer-events:none; z-index:50;
+  background:repeating-linear-gradient(rgba(0,0,0,.22) 0 1px,transparent 1px 3px);
+  box-shadow:inset 0 0 120px rgba(0,0,0,.65); }
+button { font:inherit; color:inherit; }
+#app { position:fixed; inset:0; display:grid; grid-template-rows:auto auto 1fr auto; grid-template-columns:1fr; }
+.legal { grid-column:1/-1; display:flex; align-items:center; gap:8px; padding:calc(var(--sat) + 6px) calc(var(--sar) + 12px) 6px calc(var(--sal) + 12px);
+  background:linear-gradient(90deg,rgba(255,200,87,.16),rgba(255,200,87,.05)); border-bottom:1px solid rgba(255,200,87,.45);
+  color:var(--ambre); font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; }
+.legal b { font-weight:700; }
+.legal .tri { flex:none; width:14px; height:14px; }
+header { grid-column:1/-1; display:flex; align-items:center; gap:10px; padding:10px calc(var(--sar) + 12px) 8px calc(var(--sal) + 12px); }
+header .nova { display:none; flex:none; height:34px; padding:0 10px; border-radius:8px; border:1px solid var(--bord); background:rgba(61,242,224,.06);
+  color:var(--teal); text-decoration:none; align-items:center; font-size:12px; }
+body.seul header .nova { display:flex; }
+body.seul header .heure { display:none; }   /* ouvert seul : la place va au retour « ‹ Nova » */
+body.seul header h1 { font-size:15px; letter-spacing:.16em; overflow:hidden; text-overflow:ellipsis; }
+header .tt { flex:1; min-width:0; }
+header h1 { margin:0; font-size:17px; letter-spacing:.26em; color:var(--teal); text-shadow:0 0 12px rgba(61,242,224,.6); white-space:nowrap; }
+header h1 span { color:var(--violet); text-shadow:0 0 12px rgba(176,123,255,.6); }
+header .st { margin-top:3px; display:flex; align-items:center; gap:7px; font-size:10.5px; color:var(--discret); letter-spacing:.06em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+header .st i { flex:none; width:7px; height:7px; border-radius:50%; background:#3b4a4a; }
+header .st.ok i { background:var(--vert); box-shadow:0 0 8px var(--vert); }
+header .st.ko i { background:var(--rouge); box-shadow:0 0 8px var(--rouge); }
+header .st.cours i { background:var(--ambre); box-shadow:0 0 8px var(--ambre); animation:clign 1s steps(2) infinite; }
+@keyframes clign { 50% { opacity:.25; } }
+header .heure { flex:none; font-size:12px; color:var(--discret); letter-spacing:.1em; }
+#balayer { flex:none; min-width:44px; height:38px; padding:0 12px; border-radius:8px; border:1px solid var(--teal); background:rgba(61,242,224,.1);
+  color:var(--teal); letter-spacing:.14em; font-size:11px; font-weight:700; box-shadow:0 0 12px rgba(61,242,224,.25), inset 0 0 10px rgba(61,242,224,.12); }
+#balayer:active { transform:scale(.95); }
+#balayer[disabled] { opacity:.5; }
+main { position:relative; min-height:0; overflow:hidden; }
+.vue { position:absolute; inset:0; display:none; flex-direction:column; padding:4px calc(var(--sar) + 12px) 10px calc(var(--sal) + 12px); overflow-y:auto; overscroll-behavior:contain; }
+.vue.on { display:flex; }
+.cadre { position:relative; border:1px solid var(--bord); background:var(--panneau); border-radius:10px; }
+.cadre::before, .cadre::after { content:""; position:absolute; width:12px; height:12px; border:2px solid var(--teal); pointer-events:none; filter:drop-shadow(0 0 4px var(--teal)); }
+.cadre::before { top:-2px; left:-2px; border-right:0; border-bottom:0; border-radius:10px 0 0 0; }
+.cadre::after { bottom:-2px; right:-2px; border-left:0; border-top:0; border-radius:0 0 10px 0; }
+.titreZone { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:6px 2px 8px; font-size:10.5px; letter-spacing:.28em; color:var(--discret); }
+.titreZone b { color:var(--teal); font-weight:700; }
+/* radar */
+#vRadar .radarBox { flex:1; min-height:240px; display:flex; flex-direction:column; }
+#radar { flex:1; width:100%; min-height:0; display:block; touch-action:manipulation; }
+.legende { display:flex; flex-wrap:wrap; gap:6px 12px; padding:8px 10px 9px; border-top:1px solid rgba(61,242,224,.14); font-size:10.5px; color:var(--discret); }
+.legende span { display:inline-flex; align-items:center; gap:5px; }
+.legende .f { width:9px; height:9px; display:inline-block; }
+.f.rond { border-radius:50%; background:var(--teal); }
+.f.los { background:var(--teal); transform:rotate(45deg) scale(.8); }
+.f.nous { border-radius:50%; background:var(--vert); }
+.legende .angle { flex-basis:100%; color:#5b7d7d; font-style:italic; }
+.compteurs { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px; }
+.cpt { padding:8px 6px 7px; text-align:center; border-radius:8px; border:1px solid var(--bord); background:rgba(8,16,22,.6); }
+.cpt b { display:block; font-size:20px; line-height:1.1; color:var(--teal); text-shadow:0 0 10px rgba(61,242,224,.5); }
+.cpt small { display:block; margin-top:3px; font-size:9px; letter-spacing:.12em; color:var(--discret); text-transform:uppercase; }
+.cpt.v b { color:var(--vert); text-shadow:0 0 10px rgba(77,255,160,.5); }
+.cpt.r b { color:var(--ambre); text-shadow:0 0 10px rgba(255,200,87,.5); }
+/* sources */
+.sources { display:flex; flex-direction:column; gap:6px; margin-top:10px; }
+.src { display:flex; align-items:flex-start; gap:8px; padding:8px 10px; border-radius:8px; border:1px solid rgba(61,242,224,.18); background:rgba(8,16,22,.55); font-size:11px; color:var(--discret); }
+.src i { flex:none; margin-top:4px; width:7px; height:7px; border-radius:50%; background:#3b4a4a; }
+.src.ok i { background:var(--vert); box-shadow:0 0 6px var(--vert); }
+.src.ko i { background:var(--ambre); box-shadow:0 0 6px var(--ambre); }
+.src b { color:var(--texte); font-weight:600; }
+/* liste */
+.liste { display:flex; flex-direction:column; gap:8px; }
+.ap { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:10px; width:100%; min-height:56px; padding:9px 11px; text-align:left;
+  border-radius:9px; border:1px solid rgba(61,242,224,.2); background:rgba(8,16,22,.7); }
+.ap:active { background:rgba(61,242,224,.12); }
+.ap.nous { border-color:rgba(77,255,160,.45); }
+.ap .forme { width:12px; height:12px; background:var(--teal); box-shadow:0 0 8px var(--teal); }
+.ap .forme.rond { border-radius:50%; }
+.ap .forme.los { transform:rotate(45deg) scale(.85); }
+.ap.nous .forme { background:var(--vert); box-shadow:0 0 8px var(--vert); }
+.ap .n { min-width:0; }
+.ap .n b { display:block; font-size:13px; font-weight:600; color:var(--texte); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ap .n b.inc { color:var(--discret); font-style:italic; font-weight:400; }
+.ap .n small { display:block; margin-top:2px; font-size:10.5px; color:var(--discret); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ap .s { text-align:right; font-size:12px; color:var(--teal); }
+.ap .s small { display:block; font-size:9.5px; color:var(--discret); letter-spacing:.06em; }
+.barre { height:3px; margin-top:5px; border-radius:2px; background:rgba(61,242,224,.12); overflow:hidden; }
+.barre i { display:block; height:100%; background:linear-gradient(90deg,var(--teal),var(--violet)); }
+.tag { display:inline-block; margin-left:6px; padding:1px 5px; border-radius:4px; font-size:9px; letter-spacing:.08em; vertical-align:1px; }
+.tag.nous { color:#03150b; background:var(--vert); }
+.tag.conn { color:var(--bleu); border:1px solid rgba(47,200,255,.5); }
+.filtres { display:flex; gap:6px; margin:0 0 10px; }
+.filtres button { flex:1; height:36px; border-radius:8px; border:1px solid rgba(61,242,224,.22); background:rgba(8,16,22,.6); color:var(--discret); font-size:11px; letter-spacing:.08em; }
+.filtres button.on { color:var(--teal); border-color:var(--teal); background:rgba(61,242,224,.1); }
+/* journal */
+.jl { display:flex; flex-direction:column; gap:6px; }
+.ev { padding:8px 10px; border-left:3px solid var(--bleu); border-radius:0 8px 8px 0; background:rgba(8,16,22,.7); font-size:11.5px; }
+.ev.aut { border-left-color:var(--rouge); }
+.ev.ref { border-left-color:var(--ambre); }
+.ev .h { display:flex; justify-content:space-between; gap:8px; font-size:10px; color:var(--discret); letter-spacing:.06em; }
+.ev .h b { letter-spacing:.14em; }
+.ev.aut .h b { color:var(--rouge); }
+.ev.ref .h b { color:var(--ambre); }
+.ev .a { margin-top:3px; color:var(--texte); }
+.ev .r { margin-top:2px; color:var(--discret); font-size:10.5px; }
+.equipes { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
+.eq { padding:9px 10px; border-radius:9px; border:1px solid; font-size:10px; letter-spacing:.08em; }
+.eq.rouge { border-color:rgba(255,77,109,.5); background:rgba(255,77,109,.07); color:var(--rouge); }
+.eq.bleu { border-color:rgba(47,200,255,.5); background:rgba(47,200,255,.07); color:var(--bleu); }
+.eq b { display:block; font-size:20px; letter-spacing:0; }
+.eq small { display:block; margin-top:3px; color:var(--discret); letter-spacing:.04em; font-size:9.5px; }
+/* cadre légal */
+.texte { padding:12px 14px; font-size:12px; line-height:1.55; }
+.texte h2 { margin:4px 0 8px; font-size:11px; letter-spacing:.24em; color:var(--teal); font-weight:700; }
+.texte ul { margin:0 0 12px; padding-left:18px; }
+.texte li { margin:3px 0; }
+.texte .non { color:var(--rouge); }
+.texte .oui { color:var(--vert); }
+/* PC absent */
+.absent { display:none; flex:1; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:26px 18px; text-align:center; }
+body.sansPc .absent { display:flex; }
+body.sansPc .avecPc { display:none !important; }
+.absent .ic { width:66px; height:66px; color:var(--ambre); filter:drop-shadow(0 0 10px rgba(255,200,87,.5)); }
+.absent h2 { margin:0; font-size:15px; letter-spacing:.2em; color:var(--ambre); }
+.absent p { margin:0; max-width:300px; color:var(--discret); font-size:12px; }
+.absent button { margin-top:6px; height:44px; padding:0 22px; border-radius:9px; border:1px solid var(--ambre); background:rgba(255,200,87,.1); color:var(--ambre); letter-spacing:.14em; font-size:12px; font-weight:700; }
+.vide { padding:22px 10px; text-align:center; color:var(--discret); font-size:12px; letter-spacing:.1em; }
+/* onglets */
+nav { grid-column:1/-1; display:grid; grid-template-columns:repeat(4,1fr); gap:4px; padding:6px calc(var(--sar) + 8px) calc(var(--sab) + 6px) calc(var(--sal) + 8px);
+  border-top:1px solid var(--bord); background:rgba(3,7,10,.94); }
+nav button { height:50px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; border:0; border-radius:9px; background:none; color:var(--discret); font-size:9.5px; letter-spacing:.16em; }
+nav button svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+nav button.on { color:var(--teal); background:rgba(61,242,224,.08); text-shadow:0 0 8px rgba(61,242,224,.6); }
+nav button.on svg { filter:drop-shadow(0 0 5px var(--teal)); }
+/* fiche (feuille du bas) */
+#voile { position:fixed; inset:0; z-index:60; background:rgba(0,0,0,.55); opacity:0; pointer-events:none; transition:opacity .25s; }
+#voile.on { opacity:1; pointer-events:auto; }
+#fiche { position:fixed; z-index:61; left:0; right:0; bottom:0; max-height:84%; overflow-y:auto; overscroll-behavior:contain;
+  padding:8px calc(var(--sar) + 14px) calc(var(--sab) + 14px) calc(var(--sal) + 14px); border-radius:16px 16px 0 0;
+  border-top:1px solid var(--violet); background:linear-gradient(180deg,rgba(14,10,28,.98),rgba(5,8,12,.99));
+  box-shadow:0 -10px 40px rgba(0,0,0,.6), 0 -1px 18px rgba(176,123,255,.25); transform:translateY(105%); transition:transform .3s cubic-bezier(.22,.8,.24,1); }
+#fiche.on { transform:none; }
+#fiche .poignee { width:44px; height:4px; margin:2px auto 10px; border-radius:2px; background:rgba(176,123,255,.5); }
+#fiche .ft { display:flex; align-items:flex-start; gap:10px; }
+#fiche .ft h2 { flex:1; min-width:0; margin:0; font-size:15px; color:var(--violet); letter-spacing:.06em; overflow-wrap:anywhere; text-shadow:0 0 10px rgba(176,123,255,.5); }
+#fiche .ft h2.inc { color:var(--discret); font-style:italic; text-shadow:none; }
+#fiche .ferme { flex:none; width:40px; height:40px; border-radius:9px; border:1px solid rgba(176,123,255,.4); background:rgba(176,123,255,.08); color:var(--violet); font-size:18px; line-height:1; }
+#fiche dl { display:grid; grid-template-columns:auto 1fr; gap:6px 12px; margin:12px 0; font-size:12px; }
+#fiche dt { color:var(--discret); letter-spacing:.08em; font-size:10.5px; text-transform:uppercase; padding-top:1px; }
+#fiche dd { margin:0; color:var(--texte); overflow-wrap:anywhere; }
+#fiche dd.inc { color:var(--discret); font-style:italic; }
+#graphe { width:100%; height:84px; display:block; border-radius:8px; border:1px solid rgba(176,123,255,.25); background:rgba(8,6,18,.6); }
+#fiche .gl { display:flex; justify-content:space-between; margin:6px 2px 0; font-size:10px; color:var(--discret); }
+#fiche .actions { margin-top:12px; display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+#fiche .actions button { min-height:40px; padding:6px; border-radius:8px; border:1px dashed rgba(111,154,154,.45); background:rgba(8,16,22,.6); color:#577777; font-size:10.5px; }
+#fiche .note { margin:8px 2px 0; font-size:10.5px; color:var(--ambre); line-height:1.45; }
+/* paysage : rail à gauche, radar et liste côte à côte */
+@media (orientation:landscape) and (max-height:560px) {
+  #app { grid-template-columns:auto 1fr; grid-template-rows:auto auto 1fr; }
+  .legal { padding-top:calc(var(--sat) + 4px); padding-bottom:4px; }
+  header { padding-top:6px; padding-bottom:4px; }
+  header h1 { font-size:15px; }
+  nav { grid-column:1; grid-row:3; grid-template-columns:1fr; grid-auto-rows:min-content; align-content:start; border-top:0; border-right:1px solid var(--bord);
+    padding:6px 6px calc(var(--sab) + 6px) calc(var(--sal) + 6px); }
+  nav button { width:64px; height:52px; }
+  main { grid-column:2; grid-row:3; }
+  .vue { padding-left:12px; }
+  #vRadar.on { flex-direction:row; gap:12px; }
+  #vRadar .radarBox { flex:1.2; min-height:0; }
+  #vRadar .cote { flex:1; min-width:0; overflow-y:auto; }
+  #vRadar .compteurs { margin-top:0; }
+  #fiche { left:auto; right:calc(var(--sar) + 10px); width:min(420px,60vw); max-height:92%; border-radius:16px 16px 0 0; }
+}
+@media (prefers-reduced-motion:reduce) { * { transition:none !important; animation:none !important; } }
+</style>
+</head>
+<body class="sansPc">
+<div id="app">
+  <div class="legal" role="note"><svg class="tri" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>
+    <span><b>LABO</b> — appareils tiers en <b>LECTURE SEULE</b></span></div>
+  <header>
+    <a class="nova" href="./" aria-label="Revenir à Nova">‹ Nova</a>
+    <div class="tt"><h1>LABO <span>NETRUNNER</span></h1><div class="st" id="etat"><i></i><span>…</span></div></div>
+    <span class="heure" id="heure">--:--</span>
+    <button id="balayer" type="button" aria-label="Balayer maintenant">SCAN</button>
+  </header>
+  <main>
+    <section class="vue on" id="vRadar" aria-label="Radar">
+      <div class="absent"></div>
+      <div class="radarBox cadre avecPc"><canvas id="radar" aria-label="Radar des appareils mesurés"></canvas>
+        <div class="legende"><span><i class="f rond"></i>Wi-Fi</span><span><i class="f los"></i>Bluetooth</span><span><i class="f nous"></i>à nous</span>
+          <span class="angle">anneaux = force du signal · angle = arbitraire (non mesuré)</span></div></div>
+      <div class="cote avecPc">
+        <div class="compteurs"><div class="cpt"><b id="nVus">0</b><small>appareils vus</small></div>
+          <div class="cpt v"><b id="nNous">0</b><small>à nous</small></div><div class="cpt r"><b id="nPres">0</b><small>tout près</small></div></div>
+        <div class="sources" id="sources"></div>
+      </div>
+    </section>
+    <section class="vue" id="vListe" aria-label="Liste">
+      <div class="absent"></div>
+      <div class="avecPc" style="display:flex;flex-direction:column">
+        <div class="titreZone"><b>APPAREILS MESURÉS</b><span id="lMaj"></span></div>
+        <div class="filtres" role="tablist"><button class="on" data-f="tout">TOUT</button><button data-f="wifi">WI-FI</button><button data-f="bluetooth">BLUETOOTH</button><button data-f="nous">À NOUS</button></div>
+        <div class="liste" id="liste"></div>
+      </div>
+    </section>
+    <section class="vue" id="vJournal" aria-label="Équipes et journal">
+      <div class="absent"></div>
+      <div class="avecPc" style="display:flex;flex-direction:column">
+        <div class="titreZone"><b>ÉQUIPES RED / BLUE</b><span>journal du garde</span></div>
+        <div class="equipes"><div class="eq rouge"><b id="nAut">0</b>ROUGE · OFFENSIF<small>actions autorisées, nos machines</small></div>
+          <div class="eq bleu"><b id="nRef">0</b>BLEU · DÉFENSIF<small>refus du garde</small></div></div>
+        <div class="jl" id="journal"></div>
+      </div>
+    </section>
+    <section class="vue" id="vCadre" aria-label="Cadre légal">
+      <div class="titreZone"><b>CADRE DU LABO</b><span>marche hors ligne</span></div>
+      <div class="cadre texte">
+        <h2>CE QUE FAIT LE LABO</h2>
+        <ul><li class="oui">Détection <b>passive</b> : il écoute ce qui passe (Wi-Fi, annonces Bluetooth), sans rien émettre.</li>
+          <li class="oui">Rien d'inventé : ce qui n'est pas mesuré est affiché « inconnu ».</li>
+          <li class="oui">La distance est une estimation tirée du signal ; l'angle sur le radar est arbitraire.</li>
+          <li class="oui">Les adresses MAC des appareils des autres sont masquées.</li></ul>
+        <h2>CE QUI RESTE INTERDIT</h2>
+        <ul><li class="non">Toute action sur un appareil qui n'est pas à nous (lecture seule).</li>
+          <li class="non">4G / 5G, brouilleur, EMP, désauthentification : jamais.</li>
+          <li class="non">Le pentest se lance seulement depuis le PC, via le garde et la liste blanche.</li></ul>
+        <h2>SUR LE TÉLÉPHONE</h2>
+        <ul><li>Les mesures viennent du PC (sa carte Wi-Fi et son Bluetooth), avec la clé de ce téléphone.</li>
+          <li>Rien n'est gardé dans le téléphone ni publié : la page ne contient aucune donnée.</li>
+          <li>PC éteint ou hors réseau : « Besoin du PC allumé ».</li></ul>
+      </div>
+    </section>
+  </main>
+  <nav role="tablist" aria-label="Vues du labo">
+    <button class="on" data-v="vRadar" role="tab"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12l6-6"/></svg>RADAR</button>
+    <button data-v="vListe" role="tab"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.5M4 12h.5M4 18h.5"/></svg>LISTE</button>
+    <button data-v="vJournal" role="tab"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>ÉQUIPES</button>
+    <button data-v="vCadre" role="tab"><svg viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>CADRE</button>
+  </nav>
+</div>
+<div id="voile"></div>
+<section id="fiche" aria-label="Fiche appareil" aria-hidden="true"></section>
+<template id="tAbsent"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4M9 8l6 5M15 8l-6 5"/></svg>
+  <h2>BESOIN DU PC ALLUMÉ</h2><p class="pourquoi">Les mesures viennent du PC. Allume-le (avec Nova) puis réessaie.</p>
+  <button type="button" class="reessai">RÉESSAYER</button></template>
+<script>
+(() => {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  if (window.top === window) document.body.classList.add("seul");   // ouverte hors du tiroir : petit retour vers Nova
+
+  // ---------- accès au PC (même schéma que lecture.html : seulement le tunnel ou l'adresse Wi-Fi enregistrés par Nova) ----------
+  const TUNNEL_OK = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/;
+  const WIFI_OK = /^https:\/\/(10|192\.168|172\.(1[6-9]|2\d|3[01]))(\.\d{1,3}){2,3}(:\d+)?$/;
+  function confNova() {
+    try { const c = JSON.parse(localStorage.getItem("nova-conf-v1") || "null"); return c && typeof c === "object" ? c : null; } catch (e) { return null; }
+  }
+  let baseOk = null;
+  async function demander(quoi, forcer) {
+    const c = confNova(), appareil = c && typeof c.appareil === "string" ? c.appareil : "";
+    const surGitHub = /\.github\.io$/.test(location.hostname);
+    const bases = [];
+    if (!surGitHub && location.protocol === "https:") bases.push("");
+    if (c && WIFI_OK.test(c.local || "")) bases.push(c.local);
+    if (c && TUNNEL_OK.test(c.base || "")) bases.push(c.base);
+    if (baseOk !== null && bases.includes(baseOk)) { bases.splice(bases.indexOf(baseOk), 1); bases.unshift(baseOk); }
+    if (!appareil && surGitHub) return { ok: false, raison: "pas relié" };
+    if (typeof navigator.onLine === "boolean" && !navigator.onLine) return { ok: false, raison: "hors ligne" };
+    if (!bases.length) return { ok: false, raison: "pas relié" };
+    let raison = "injoignable";
+    for (const b of bases) {
+      const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 22000);
+      try {
+        const meme = !b;
+        const r = await fetch((b || "") + "/api/montrer/labo?quoi=" + quoi + (forcer ? "&forcer=1" : ""), { cache: "no-store",
+          mode: meme ? "same-origin" : "cors", credentials: meme ? "same-origin" : "omit",
+          headers: appareil ? { "X-Nova-Appareil": appareil } : {}, signal: ctl.signal });
+        if (r.status === 401 || r.status === 403) { raison = "clé refusée"; break; }
+        if (!r.ok) { raison = "erreur " + r.status; continue; }
+        const d = await r.json(); baseOk = b; return { ok: true, d };
+      } catch (e) { raison = e && e.name === "AbortError" ? "délai dépassé" : "injoignable"; }
+      finally { clearTimeout(t); }
+    }
+    return { ok: false, raison };
+  }
+
+  // ---------- état ----------
+  const S = { apps: [], wifi: null, ble: null, journal: [], t: 0, enCours: false, filtre: "tout", sel: null, histo: new Map(), pc: null };
+  const ZONES = { "tout-pres": "tout près", "piece": "dans la pièce", "loin": "plus loin", "tres-loin": "très loin" };
+  const zoneTxt = z => ZONES[z] || "inconnue";
+  const forme = a => a.source === "bluetooth" ? "los" : "rond";
+  const nomDe = a => a.nom ? esc(a.nom) : '<span class="inc">inconnu</span>';
+  const ilYa = t => { const s = Math.max(0, Math.round(Date.now() / 1000 - t)); return s < 5 ? "à l'instant" : s < 60 ? "il y a " + s + " s" : "il y a " + Math.round(s / 60) + " min"; };
+
+  function poserEtat(cls, txt) { const e = $("etat"); e.className = "st " + cls; e.querySelector("span").textContent = txt; }
+  function absent(raison) {
+    document.body.classList.add("sansPc");
+    const p = raison === "pas relié" ? "Ce téléphone n'est pas encore relié au PC : ouvre Nova une fois sur le PC (QR), puis reviens."
+      : raison === "clé refusée" ? "Le PC a refusé la clé de ce téléphone. Relie-le de nouveau depuis Nova."
+      : raison === "hors ligne" ? "Pas de réseau. Les mesures viennent du PC : reviens quand le téléphone est en ligne."
+      : "Les mesures viennent du PC. Allume-le (avec Nova) puis réessaie.";
+    document.querySelectorAll(".absent .pourquoi").forEach(x => x.textContent = p);
+    poserEtat("ko", raison === "hors ligne" ? "hors ligne" : raison === "pas relié" ? "pas relié au PC" : "PC injoignable (" + raison + ")");
+  }
+
+  async function balayer(forcer) {
+    if (S.enCours) return;
+    S.enCours = true; $("balayer").disabled = true; poserEtat("cours", "balayage passif…");
+    try {
+      const r = await demander("tout", forcer);
+      if (!r.ok) { S.pc = false; absent(r.raison); return; }
+      const d = r.d || {};
+      if (d.labo === false) { S.pc = false; absent("labo absent"); document.querySelectorAll(".absent .pourquoi").forEach(x => x.textContent = d.message || "Le labo n'est pas installé sur le PC."); poserEtat("ko", "labo absent du PC"); return; }
+      S.pc = true; document.body.classList.remove("sansPc");
+      S.wifi = d.wifi || null; S.ble = d.ble || null; S.journal = Array.isArray(d.journal) ? d.journal : [];
+      S.t = d.t || Date.now() / 1000;
+      const apps = [].concat((S.wifi && S.wifi.appareils) || [], (S.ble && S.ble.appareils) || []).filter(a => a && a.id && a.reel === true);
+      for (const a of apps) {
+        if (typeof a.rssi !== "number") continue;
+        const h = S.histo.get(a.id) || []; h.push({ t: S.t, rssi: a.rssi });
+        while (h.length && S.t - h[0].t > 120) h.shift();
+        S.histo.set(a.id, h);
+      }
+      S.apps = apps.sort((x, y) => (y.rssi ?? -999) - (x.rssi ?? -999));
+      poserEtat("ok", "PC relié · " + apps.length + " mesuré" + (apps.length > 1 ? "s" : ""));
+      peindre();
+    } finally { S.enCours = false; $("balayer").disabled = false; }
+  }
+
+  // ---------- rendu ----------
+  function peindre() {
+    $("nVus").textContent = S.apps.length;
+    $("nNous").textContent = S.apps.filter(a => a.anous).length;
+    $("nPres").textContent = S.apps.filter(a => a.distance === "tout-pres").length;
+    const src = (n, v) => {
+      if (!v) return `<div class="src"><i></i><div><b>${n}</b> · pas de réponse</div></div>`;
+      return `<div class="src ${v.ok ? "ok" : "ko"}"><i></i><div><b>${n}</b> · ${(v.appareils || []).filter(a => a && a.reel === true).length} vu(s)<br>${esc(v.message || v.etat || "")}</div></div>`;
+    };
+    $("sources").innerHTML = src("Wi-Fi", S.wifi) + src("Bluetooth", S.ble);
+    $("lMaj").textContent = S.t ? ilYa(S.t) : "";
+    const l = S.apps.filter(a => S.filtre === "tout" || (S.filtre === "nous" ? a.anous : a.source === S.filtre));
+    $("liste").innerHTML = l.length ? l.map(a => {
+      const pct = typeof a.rssi === "number" ? Math.max(0, Math.min(100, (a.rssi + 100) / 70 * 100)) : 0;
+      return `<button class="ap${a.anous ? " nous" : ""}" data-id="${esc(a.id)}"><i class="forme ${forme(a)}"></i>
+        <span class="n"><b class="${a.nom ? "" : "inc"}">${a.nom ? esc(a.nom) : "inconnu"}</b>
+        <small>${a.source === "bluetooth" ? "Bluetooth" : "Wi-Fi"} · ${esc(a.mac || "masquée")}${a.anous ? '<span class="tag nous">À NOUS</span>' : ""}${a.connecte ? '<span class="tag conn">CONNECTÉ</span>' : ""}</small>
+        <span class="barre"><i style="width:${pct}%"></i></span></span>
+        <span class="s">${typeof a.rssi === "number" ? a.rssi + " dBm" : "inconnu"}<small>${zoneTxt(a.distance)}</small></span></button>`;
+    }).join("") : `<div class="vide">AUCUN APPAREIL MESURÉ</div>`;
+    const j = S.journal;
+    $("nAut").textContent = j.filter(e => /autoris/.test(e.decision)).length;
+    $("nRef").textContent = j.filter(e => /refus/.test(e.decision)).length;
+    $("journal").innerHTML = j.length ? j.map(e => {
+      const aut = /autoris/.test(e.decision);
+      const d = new Date(e.t); const h = isNaN(d) ? esc(e.t) : d.toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+      return `<div class="ev ${aut ? "aut" : "ref"}"><div class="h"><b>${aut ? "AUTORISÉE" : "REFUSÉE"}</b><span>${h}</span></div>
+        <div class="a">${esc(e.action)} → ${esc(e.cible)}</div>${e.raison ? `<div class="r">${esc(e.raison)}</div>` : ""}</div>`;
+    }).join("") : `<div class="vide">AUCUN ÉVÉNEMENT RÉEL</div>`;
+    if (S.sel) { const a = S.apps.find(x => x.id === S.sel); if (a && $("fiche").classList.contains("on")) remplirFiche(a); }
+    dessinerRadar();
+  }
+
+  // ---------- radar ----------
+  const cv = $("radar"), cx = cv.getContext("2d");
+  let pts = [], bal = 0, dernier = 0;
+  function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; }
+  const BANDES = { "tout-pres": [0.1, 0.32, -50, -30], "piece": [0.32, 0.6, -67, -50], "loin": [0.6, 0.82, -85, -67], "tres-loin": [0.82, 0.96, -100, -85] };
+  function rayonDe(a) {
+    const b = BANDES[a.distance]; if (!b || typeof a.rssi !== "number") return null;
+    const [r0, r1, lo, hi] = b; const f = Math.max(0, Math.min(1, (hi - a.rssi) / (hi - lo)));
+    return r0 + (r1 - r0) * f;
+  }
+  function dessinerRadar(now) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1), w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, w, h);
+    const ox = w / 2, oy = h / 2, R = Math.min(w, h) / 2 - 14;
+    cx.lineWidth = 1;
+    for (let i = 1; i <= 12; i++) { const an = i / 12 * Math.PI * 2; cx.strokeStyle = "rgba(61,242,224,.07)"; cx.beginPath(); cx.moveTo(ox, oy); cx.lineTo(ox + Math.cos(an) * R, oy + Math.sin(an) * R); cx.stroke(); }
+    [[0.32, "TOUT PRÈS"], [0.6, "PIÈCE"], [0.82, "PLUS LOIN"], [0.96, ""]].forEach(([f, t]) => {
+      cx.strokeStyle = "rgba(61,242,224,.34)"; cx.setLineDash(f === 0.96 ? [] : [3, 4]); cx.beginPath(); cx.arc(ox, oy, R * f, 0, Math.PI * 2); cx.stroke();
+      cx.setLineDash([]); if (t) { cx.fillStyle = "rgba(111,154,154,.8)"; cx.font = "9px Consolas,monospace"; cx.textAlign = "center"; cx.fillText(t, ox, oy + R * f - 4); cx.textAlign = "start"; }   // en bas de l'anneau : moins de chevauchement avec les noms
+    });
+    // balayage
+    const g = cx.createConicGradient ? cx.createConicGradient(bal - 1.1, ox, oy) : null;
+    if (g) { g.addColorStop(0, "rgba(61,242,224,0)"); g.addColorStop(1.1 / (Math.PI * 2), "rgba(61,242,224,.22)"); g.addColorStop(1.1 / (Math.PI * 2) + .001, "rgba(61,242,224,0)"); g.addColorStop(1, "rgba(61,242,224,0)");
+      cx.fillStyle = g; cx.beginPath(); cx.arc(ox, oy, R, 0, Math.PI * 2); cx.fill(); }
+    cx.fillStyle = "#3df2e0"; cx.shadowColor = "#3df2e0"; cx.shadowBlur = 10; cx.beginPath(); cx.arc(ox, oy, 3, 0, Math.PI * 2); cx.fill(); cx.shadowBlur = 0;
+    pts = [];
+    const tard = Date.now() / 1000;
+    for (const a of S.apps) {
+      const r = rayonDe(a); if (r === null) continue;   // pas de signal mesuré : pas de point (rien d'inventé)
+      const an = hash(a.id) * Math.PI * 2, x = ox + Math.cos(an) * R * r, y = oy + Math.sin(an) * R * r;
+      const coul = a.id === S.sel ? "#b07bff" : a.anous ? "#4dffa0" : "#3df2e0";
+      const p = 0.75 + 0.25 * Math.sin(tard * 2.4 + hash(a.id) * 9);
+      cx.save(); cx.translate(x, y); cx.fillStyle = coul; cx.shadowColor = coul; cx.shadowBlur = 12 * p;
+      const s = a.id === S.sel ? 7 : 5.5;
+      cx.beginPath(); if (a.source === "bluetooth") { cx.moveTo(0, -s); cx.lineTo(s, 0); cx.lineTo(0, s); cx.lineTo(-s, 0); cx.closePath(); } else cx.arc(0, 0, s * .85, 0, Math.PI * 2);
+      cx.fill(); cx.shadowBlur = 0;
+      if (a.id === S.sel) { cx.strokeStyle = "#b07bff"; cx.lineWidth = 1.4; cx.beginPath(); cx.arc(0, 0, 13, 0, Math.PI * 2); cx.stroke(); }
+      if (a.anous || a.id === S.sel || S.apps.length <= 8) { cx.fillStyle = "rgba(214,247,243,.85)"; cx.font = "10px Consolas,monospace"; const t = (a.nom || "inconnu").slice(0, 16); cx.fillText(t, x > ox ? -cx.measureText(t).width - 10 : 10, 3); }
+      cx.restore();
+      pts.push({ x, y, a });
+    }
+    if (!S.apps.length && S.pc) { cx.fillStyle = "rgba(111,154,154,.85)"; cx.font = "11px Consolas,monospace"; const t = "AUCUN APPAREIL MESURÉ"; cx.fillText(t, ox - cx.measureText(t).width / 2, oy + 24); }
+  }
+  const lent = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function boucle(t) {
+    if (!document.hidden && $("vRadar").classList.contains("on") && S.pc) {
+      if (!lent) bal = (bal + Math.min(64, t - (dernier || t)) / 1000 * 0.35 * Math.PI * 2) % (Math.PI * 2);
+      dessinerRadar(t);
+    }
+    dernier = t; requestAnimationFrame(boucle);
+  }
+  requestAnimationFrame(boucle);
+  cv.addEventListener("click", e => {
+    const b = cv.getBoundingClientRect(), x = e.clientX - b.left, y = e.clientY - b.top;
+    let m = null, md = 30 * 30;
+    for (const p of pts) { const d = (p.x - x) ** 2 + (p.y - y) ** 2; if (d < md) { md = d; m = p; } }
+    if (m) ouvrirFiche(m.a.id);
+  });
+
+  // ---------- fiche ----------
+  const ACTIONS = ["Inventaire des services", "Scan de ports", "Audit de configuration", "Test mots de passe faibles"];
+  function remplirFiche(a) {
+    const h = S.histo.get(a.id) || [];
+    let tend = "inconnue";
+    if (h.length >= 2) { const d = h[h.length - 1].rssi - h[0].rssi; tend = d > 3 ? "se rapproche" : d < -3 ? "s'éloigne" : "stable"; }
+    const ligne = (k, v, inc) => `<dt>${k}</dt><dd${inc ? ' class="inc"' : ""}>${v}</dd>`;
+    const v = (x, suf) => x == null || x === "" ? null : esc(x) + (suf || "");
+    const champs = [["Source", a.source === "bluetooth" ? "Bluetooth (annonces BLE)" : "Wi-Fi (point d'accès)"], ["Type", v(a.type)], ["MAC", v(a.mac)],
+      ["Signal", v(a.rssi, " dBm")], ["Distance", a.distance ? zoneTxt(a.distance) + (a.metres != null ? " · ~" + esc(a.metres) + " m (estimé)" : "") : null],
+      ["Tendance", tend === "inconnue" ? null : tend], ["Vu", a.vuLe ? ilYa(a.vuLe) : null], ["À nous", a.anous ? "oui (liste blanche du PC)" : "non · lecture seule"]];
+    if (a.source === "wifi") champs.push(["Bande", v(a.bande)], ["Canal", v(a.canal)], ["Norme", v(a.radio)], ["Connecté", a.connecte ? "oui, le PC y est connecté" : "non"]);
+    else champs.push(["Adresse", a.adresseAleatoire == null ? null : a.adresseAleatoire ? "aléatoire (vie privée)" : "publique"], ["Services", v(a.services)]);
+    $("fiche").innerHTML = `<div class="poignee"></div><div class="ft"><h2 class="${a.nom ? "" : "inc"}">${a.nom ? esc(a.nom) : "nom inconnu"}</h2><button class="ferme" type="button" aria-label="Fermer la fiche">×</button></div>
+      <dl>${champs.map(([k, x]) => ligne(k, x == null ? "inconnu" : x, x == null)).join("")}</dl>
+      <canvas id="graphe"></canvas><div class="gl"><span>signal · 2 dernières minutes</span><span>${h.length} mesure${h.length > 1 ? "s" : ""}</span></div>
+      <div class="actions">${ACTIONS.map(t => `<button type="button" disabled>${t}</button>`).join("")}</div>
+      <p class="note">${a.anous ? "Pentest : seulement depuis le PC (garde + liste blanche)." : "Appareil d'un tiers : lecture seule, aucune action possible."}</p>`;
+    $("fiche").querySelector(".ferme").onclick = fermerFiche;
+    graphe(h);
+  }
+  function graphe(h) {
+    const c = $("graphe"); if (!c) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1), w = c.clientWidth, H = c.clientHeight;
+    c.width = w * dpr; c.height = H * dpr; const g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.strokeStyle = "rgba(176,123,255,.12)"; for (let i = 1; i < 4; i++) { g.beginPath(); g.moveTo(0, H * i / 4); g.lineTo(w, H * i / 4); g.stroke(); }
+    if (h.length < 1) { g.fillStyle = "#6f9a9a"; g.font = "10px Consolas,monospace"; g.fillText("pas encore de mesure", 10, H / 2 + 3); return; }
+    const t1 = h[h.length - 1].t, X = t => w - 6 - (t1 - t) / 120 * (w - 12), Y = r => 6 + (1 - (Math.max(-100, Math.min(-30, r)) + 100) / 70) * (H - 12);
+    g.strokeStyle = "#b07bff"; g.lineWidth = 1.8; g.shadowColor = "#b07bff"; g.shadowBlur = 8; g.beginPath();
+    h.forEach((p, i) => i ? g.lineTo(X(p.t), Y(p.rssi)) : g.moveTo(X(p.t), Y(p.rssi))); g.stroke();
+    g.shadowBlur = 0; g.fillStyle = "#b07bff"; h.forEach(p => { g.beginPath(); g.arc(X(p.t), Y(p.rssi), 2.2, 0, Math.PI * 2); g.fill(); });
+  }
+  function ouvrirFiche(id) {
+    const a = S.apps.find(x => x.id === id); if (!a) return;
+    S.sel = id; remplirFiche(a);
+    $("fiche").classList.add("on"); $("fiche").setAttribute("aria-hidden", "false"); $("voile").classList.add("on");
+    dessinerRadar();
+  }
+  function fermerFiche() { S.sel = null; $("fiche").classList.remove("on"); $("fiche").setAttribute("aria-hidden", "true"); $("voile").classList.remove("on"); dessinerRadar(); }
+  $("voile").onclick = fermerFiche;
+  // glisser la fiche vers le bas pour la fermer
+  let y0 = null;
+  $("fiche").addEventListener("touchstart", e => { y0 = $("fiche").scrollTop <= 0 ? e.touches[0].clientY : null; }, { passive: true });
+  $("fiche").addEventListener("touchend", e => { if (y0 !== null && e.changedTouches[0].clientY - y0 > 70) fermerFiche(); y0 = null; }, { passive: true });
+  $("liste").addEventListener("click", e => { const b = e.target.closest(".ap"); if (b) ouvrirFiche(b.dataset.id); });
+
+  // ---------- onglets, filtres, boutons ----------
+  document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+    document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+    document.querySelectorAll(".vue").forEach(v => v.classList.toggle("on", v.id === b.dataset.v));
+    if (b.dataset.v === "vRadar") requestAnimationFrame(() => dessinerRadar());
+  });
+  document.querySelectorAll(".filtres button").forEach(b => b.onclick = () => {
+    S.filtre = b.dataset.f; document.querySelectorAll(".filtres button").forEach(x => x.classList.toggle("on", x === b)); peindre();
+  });
+  const modele = $("tAbsent");
+  document.querySelectorAll(".absent").forEach(x => { x.appendChild(modele.content.cloneNode(true)); x.querySelector(".reessai").onclick = () => balayer(true); });
+  $("balayer").onclick = () => balayer(true);
+  addEventListener("resize", () => { dessinerRadar(); if (S.sel) graphe(S.histo.get(S.sel) || []); });
+  addEventListener("online", () => balayer(false));
+  addEventListener("offline", () => { S.pc = false; absent("hors ligne"); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) balayer(false); });
+  const horloge = () => { $("heure").textContent = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); };
+  horloge(); setInterval(horloge, 15000);
+  setInterval(() => { if (!document.hidden && S.pc !== false) balayer(false); }, 10000);
+  setInterval(() => { if (!document.hidden && S.pc === false && navigator.onLine) balayer(false); }, 30000);
+  poserEtat("cours", "recherche du PC…");
+  balayer(false);
+})();
+</script>
+</body>
+</html>
