@@ -389,7 +389,57 @@
   K.aller = aller;
 
   // ---------- ouvrir et refermer ----------
-  const forme = (a, m) => { const cx = bx + 1.5 * pw, cy = by + ph / 2, e0 = a.h / (ph + 28); return `translate3d(${((a.x - cx) * (1 - m)).toFixed(2)}px,${((a.y - cy) * (1 - m)).toFixed(2)}px,0) rotate(${(a.r * (1 - m)).toFixed(3)}deg) scale(${U.melange(e0, 1, m).toFixed(5)})`; };
+  // fluidité : la couverture choisie, réduite à la taille de l'écran et décodée d'avance (jamais une photo de 1400 px qui se décode pendant l'animation)
+  const couvPretes = new Map();                            // url d'origine + taille -> url réduite et décodée
+  const tailleCouv = () => {
+    const W = innerWidth, H = innerHeight, d = W > H, dpr = Math.min(2, devicePixelRatio || 1);
+    const p = Math.floor(d ? Math.min((W - 96) / 2, (H - 104) / 1.4143) : Math.min(W - 26, (H - 92) / 1.4143));
+    return [Math.ceil((p + 16) * dpr), Math.ceil((p * 1.4143 + 28) * dpr)];
+  };
+  function preparerCouv(url) {
+    if (!url) return Promise.resolve("");
+    const [w, h] = tailleCouv(), cle = url + "|" + w + "x" + h;
+    let x = couvPretes.get(cle);
+    if (x) return x.p;
+    x = { u: "" };
+    x.p = (async () => {
+      const im = new Image(); im.decoding = "async"; im.src = url;
+      await im.decode();
+      let u = url;
+      const e = Math.max(w / im.naturalWidth, h / im.naturalHeight);
+      if (e < 0.85 && window.createImageBitmap) {
+        try {
+          const bm = await createImageBitmap(im, { resizeWidth: Math.round(im.naturalWidth * e), resizeHeight: Math.round(im.naturalHeight * e), resizeQuality: "high" });
+          const cv = document.createElement("canvas"); cv.width = bm.width; cv.height = bm.height; cv.getContext("2d").drawImage(bm, 0, 0); bm.close && bm.close();
+          const bl = await new Promise((ok) => cv.toBlob(ok, "image/jpeg", 0.9));
+          if (bl) { u = URL.createObjectURL(bl); const im2 = new Image(); im2.src = u; await im2.decode(); }
+        } catch (er) { u = url; }
+      }
+      x.u = u; return u;
+    })().catch(() => { x.u = url; return url; });
+    couvPretes.set(cle, x);
+    return x.p;
+  }
+  const couvPrete = (url) => { if (!url) return ""; const [w, h] = tailleCouv(), x = couvPretes.get(url + "|" + w + "x" + h); return x && x.u; };
+  // au repos, on prépare d'avance les couvertures des classeurs du bureau
+  K.prechargerCouvertures = function () {
+    let objs = [];
+    try { objs = (P.donnees().objets || []).filter((o) => o && o.couv); } catch (e) { return; }
+    const suite = () => { const o = objs.shift(); if (!o) return; preparerCouv(o.couv).then(() => tranquille(suite)); };
+    tranquille(suite);
+  };
+  const tranquille = (f) => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 2500 }) : setTimeout(f, 200));
+  setTimeout(() => K.prechargerCouvertures(), 1500);
+  function poserCouv() {
+    const url = k.couv || "", u = couvPrete(url);
+    couvExt.classList.toggle("image", !!url);
+    if (!url) { couvExt.style.backgroundImage = ""; return; }
+    couvExt.style.backgroundImage = `url("${u || url}")`;
+    if (!u) { const kk = k; preparerCouv(url).then((v) => { if (k === kk && !anime && v) couvExt.style.backgroundImage = `url("${v}")`; }); }
+  }
+  // pendant l'ouverture et la fermeture : le livre devient un seul calque qui glisse et grandit, sans rien redessiner
+  const bouge = (oui) => el.classList.toggle("bouge", oui);
+  const forme =(a, m) => { const cx = bx + 1.5 * pw, cy = by + ph / 2, e0 = a.h / (ph + 28); return `translate3d(${((a.x - cx) * (1 - m)).toFixed(2)}px,${((a.y - cy) * (1 - m)).toFixed(2)}px,0) rotate(${(a.r * (1 - m)).toFixed(3)}deg) scale(${U.melange(e0, 1, m).toFixed(5)})`; };
   function poseCouv(c) {
     couv.style.transform = `rotateY(${(-180 * c).toFixed(2)}deg) translateZ(2px)`;
     const o = U.borne((c - 0.45) / 0.1, 0, 1).toFixed(3);
@@ -402,10 +452,11 @@
     mesurer(); vols = [];
     s = U.borne(k.s || 0, 0, maxS());
     titre.value = k.nom; couvNom.textContent = k.nom; el.style.setProperty("--couleur", k.couleur);
-    couvExt.style.backgroundImage = k.couv ? `url("${k.couv}")` : ""; couvExt.classList.toggle("image", !!k.couv);   // couverture choisie (sinon le cuir d'origine)
-    majStatiques(); precharger();
+    poserCouv();                                             // couverture choisie (sinon le cuir d'origine), réduite et décodée d'avance
+    majStatiques();
     const a = B.rectEcran(v);
     B.cacher(v, true);
+    bouge(true);
     livre.style.transform = forme(a, 0); poseCouv(0); voile.style.opacity = 0;
     void el.offsetWidth; el.classList.add("la");
     S.jouer("classeur");
@@ -413,7 +464,10 @@
       livre.style.transform = forme(a, U.douce(Math.min(1, t / 0.6)));
       poseCouv(U.douce2(U.borne((t - 0.1) / 0.9, 0, 1)));
       voile.style.opacity = Math.min(1, t * 2).toFixed(3);
-    }, () => { anime = false; livre.style.transform = ""; majBascules(); });
+    }, () => {
+      anime = false; livre.style.transform = ""; bouge(false); majBascules();
+      if (k) { precharger(); const kk = k; if (kk.couv && !couvPrete(kk.couv)) preparerCouv(kk.couv).then((u) => { if (k === kk && u) couvExt.style.backgroundImage = `url("${u}")`; }); }
+    });
     return true;
   };
   K.fermer = function () {
@@ -426,12 +480,13 @@
     if (document.activeElement === titre) titre.blur();
     const a = B.rectEcran(kv);
     S.jouer("classeur");
+    bouge(true);
     U.anim(duree, (t) => {
       poseCouv(1 - U.douce2(Math.min(1, t / 0.8)));
       livre.style.transform = forme(a, 1 - U.douce2(U.borne((t - 0.25) / 0.75, 0, 1)));
       voile.style.opacity = (1 - t * t).toFixed(3);
     }, () => {
-      el.hidden = true; ouvert = false; anime = false; livre.style.transform = "";
+      el.hidden = true; ouvert = false; anime = false; livre.style.transform = ""; bouge(false);
       B.cacher(kv, false); B.majClasseur(kv); B.sursaut(kv); P.sauver(k);
       k = null; kv = null;
       finFantome();

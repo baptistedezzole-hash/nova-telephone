@@ -180,6 +180,9 @@ body.corb-haut #corbeille { z-index: 60; }
 #classeur .voile { position: absolute; inset: 0; background: radial-gradient(110% 100% at 50% 45%, rgba(46, 30, 18, 0.80), rgba(16, 9, 4, 0.94)); opacity: 0; }
 #classeur .scene { position: absolute; inset: 0; perspective: 2200px; perspective-origin: 50% 46%; touch-action: none; }
 #classeur .livre { position: absolute; transform-origin: 75% 50%; transform-style: preserve-3d; }
+/* ouverture / fermeture : calques figés le temps du vol (rien n'est redessiné à chaque image), retirés une fois posé */
+#classeur.bouge .livre { will-change: transform; }
+#classeur.bouge .voile { will-change: opacity; }
 #classeur .planche { position: absolute; left: calc(var(--pw) - 12px); top: -14px; width: calc(var(--pw) + 28px); height: calc(var(--ph) + 28px); border-radius: 4px 12px 12px 4px;
   background-color: var(--couleur); background-image: url(textures/cuir.jpg); background-size: 260px; background-blend-mode: overlay; transform: translateZ(-3px);
   box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6), 0 4px 10px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.10), inset 26px 0 30px -12px rgba(0, 0, 0, 0.5); }
