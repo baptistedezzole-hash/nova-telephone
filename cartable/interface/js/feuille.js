@@ -12,6 +12,9 @@
   const gP = cPro.getContext("2d"), gE = cEnc.getContext("2d"), gN = cNet.getContext("2d"), gPap = cPap.getContext("2d");
   const etat = { outil: "stylo", couleur: "#1b1b26", surCouleur: T.SURLIGNEURS[0], taille: 2.6, doigtEcrit: true, styletVu: false };
   try { const c = localStorage.getItem("cartable-surligneur"); if (T.SURLIGNEURS.includes(c)) etat.surCouleur = c; } catch (e) { /* pas de stockage : jaune */ }
+  // mode du doigt et de la souris : sélection (déplacer, zoomer) par défaut, sinon le dernier mode choisi ; le stylet écrit toujours
+  etat.doigtEcrit = false;
+  try { etat.doigtEcrit = localStorage.getItem("cartable-doigt") === "ecrit"; } catch (e) { /* pas de stockage : sélection */ }
   F.etat = etat;
   let o = null, ouvert = false, anime = false, occupe = false, rect = null, opt = null, change = false;
   let ol = 840, oh = 1188, e0 = 1, w = 100, h = 100, k = 1, zone = null;
@@ -275,7 +278,7 @@
       if (a.t === "ajout") o.traits.push(a.trait);
       else for (const it of a.items) { const i = o.traits.indexOf(it.trait); if (i >= 0) { if (o.propre && i < (o.propre.n || 0)) oublierPropre(); o.traits.splice(i, 1); } }
       pile.push(a); modifie(); redessiner();
-    } else if (nom === "doigt") { etat.doigtEcrit = !etat.doigtEcrit; majOutils(); C.dire(etat.doigtEcrit ? "Le doigt écrit." : "Le doigt déplace la feuille."); }
+    } else if (nom === "doigt") { etat.doigtEcrit = !etat.doigtEcrit; try { localStorage.setItem("cartable-doigt", etat.doigtEcrit ? "ecrit" : "selection"); } catch (e) { /* tant pis */ } majOutils(); C.dire(etat.doigtEcrit ? "Mode écriture : le doigt et la souris écrivent." : "Mode sélection : on déplace et on zoome, le stylet écrit."); }
     else if (nom === "propre") return auPropre();
   };
   // choisir le surligneur alors qu'il est déjà en main : couleur suivante
@@ -372,7 +375,7 @@
     e.preventDefault();
     try { el.setPointerCapture(e.pointerId); } catch (x) { /* pointeur d'essai */ }
     const type = e.pointerType;
-    if (type === "pen" && !etat.styletVu) { etat.styletVu = true; etat.doigtEcrit = false; majOutils(); }
+    if (type === "pen") etat.styletVu = true;                                      // le stylet écrit sans toucher au mode du doigt
     const p = { id: e.pointerId, type, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, bouge: false, k: "vue", voile: e.target === voile };
     ptrs.set(p.id, p);
     const doigts = Array.from(ptrs.values()).filter((q) => q.type === "touch");
@@ -383,7 +386,7 @@
       return;
     }
     const [x, y] = versPage(p.x, p.y), dedans = x > -10 && y > -10 && x < ol + 10 && y < oh + 10;
-    const ecrit = type === "pen" || (type === "mouse" && (e.button === 0 || e.button === 2)) || (type === "touch" && etat.doigtEcrit && doigts.length === 1);   // clic droit = surligner
+    const ecrit = type === "pen" || (type === "mouse" && (e.button === 2 || (e.button === 0 && etat.doigtEcrit))) || (type === "touch" && etat.doigtEcrit && doigts.length === 1);   // clic droit = surligner
     if (ecrit && dedans && !trait && !occupe) { p.k = "trait"; debutTrait(p, e); }
   });
   addEventListener("pointermove", (e) => {

@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="69c34da0ca93f860">
+<meta name="nova-version" content="4516b12b4aa8b6d3">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -3008,6 +3008,23 @@ function couperMicro(oui) {
 }
 $("btnMuet").addEventListener("click", ev => { ev.stopPropagation(); deverrouillerSon(); couperMicro(!micCoupe); });
 window.NovaMicro = { coupe: () => micCoupe, couper: couperMicro };
+// 2026-11-26 PARLER À NOVA DEPUIS UNE APPLI (Cartable…) : le petit micro de la barre d'appli (applis.js) passe par ICI,
+// le même chemin que le gros micro (même écoute, même envoi, même voix) ; rien n'est recodé. etat() = ce que la bulle affiche.
+window.NovaParole = {
+  toucher() {   // à appeler DANS le geste (click) : la demande du micro de Chrome doit être synchrone
+    deverrouillerSon();
+    if (micCoupe) { toast("Micro coupé : rallume-le d'abord (petit rond du micro)."); return false; }
+    if (window.MediaRecorder && !micOuvert() && !micOuvre) ouvrirMicro().then(f => { if (!f) expliquerMicro(); });
+    vib(8); clearTimeout(tapAttente); tapAttente = 0;
+    toucheSimple(); maj(); return true;
+  },
+  etat() {
+    const ne = etatConv();
+    return { etat: local === "attente" ? (ne === "repos" ? "envoi" : ne) : (local || ne), local, lecture: !!lecture, connecte,
+      micCoupe, mainsLibres, niveau: typeof niveauMicro === "number" ? niveauMicro : 0, toi: $("toi").textContent || "",
+      nova: ST.texte || "", novaId: ST.id, pastille: ST.pastille || "", conv };
+  },
+};
 // mains libres allumées par défaut : le navigateur veut un geste avant le son et le micro -> dès le 1er toucher de l'écran
 if (lire("nova-libre", "1") !== "0") {
   const premier = (ev) => {

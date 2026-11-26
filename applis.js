@@ -126,6 +126,33 @@
 #appliVue .titre { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font:600 13.5px/1.2 var(--sans,system-ui); color:#e9d6a8; letter-spacing:.02em; }
 #appliVue .hl { font:600 9px/1 var(--sans,system-ui); letter-spacing:.1em; text-transform:uppercase; color:#5cff9d; }
 #appliVue iframe { flex:1; width:100%; border:0; background:#02030a; }
+/* 26/11 : parler à Nova sans quitter l'appli (petit micro de la barre + bulle discrète) */
+#appliVue .parle { position:relative; flex:none; width:30px; height:30px; padding:0; border-radius:50%; display:grid; place-items:center;
+  border:1px solid rgba(176,108,255,.26); background:rgba(176,108,255,.06); color:rgba(214,200,255,.72); -webkit-tap-highlight-color:transparent; }
+#appliVue .parle svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+#appliVue .parle:active { transform:scale(.92); }
+#appliVue .parle::after { content:""; position:absolute; inset:-3px; border-radius:50%; border:1.5px solid #b06cff; opacity:0;
+  transform:scale(calc(1 + var(--niv,0) * .35)); transition:opacity .2s, transform .12s; }
+#appliVue .parle.ecoute { color:#f4efff; background:rgba(176,108,255,.22); border-color:rgba(176,108,255,.7); }
+#appliVue .parle.ecoute::after { opacity:.8; }
+#appliVue .parle.pense::after { opacity:.55; border-color:transparent; border-top-color:#b06cff; animation:applisTourne 1s linear infinite; }
+#appliVue .parle.voix { color:#e9d6a8; border-color:rgba(233,214,168,.5); }
+#appliVue .parle.coupe { opacity:.45; }
+#appliVue .parle[hidden] { display:none; }
+#novaBulle { position:fixed; z-index:2147483300; right:calc(env(safe-area-inset-right,0px) + 10px); top:calc(env(safe-area-inset-top,0px) + 54px);
+  max-width:min(80vw,360px); padding:9px 13px 10px; border-radius:14px 4px 14px 14px; font:400 13.5px/1.4 var(--sans,system-ui,sans-serif);
+  color:rgba(240,236,255,.94); background:rgba(12,10,30,.9); box-shadow:0 0 0 1px rgba(176,108,255,.28),0 10px 30px rgba(0,0,0,.45);
+  -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); opacity:0; transform:translateY(-6px); pointer-events:none; transition:opacity .22s, transform .22s; }
+#novaBulle.vu { opacity:1; transform:none; pointer-events:auto; }
+#novaBulle .toi { color:rgba(169,200,255,.8); font-size:12.5px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+#novaBulle .toi:empty, #novaBulle .etat:empty, #novaBulle .nova:empty { display:none; }
+#novaBulle .nova { max-height:9.8em; overflow-y:auto; overscroll-behavior:contain; }
+#novaBulle .etat { display:flex; align-items:center; gap:7px; font-size:12px; color:rgba(214,200,255,.7); }
+#novaBulle > * + * { margin-top:3px; }
+#novaBulle .niv { width:34px; height:3px; border-radius:2px; background:rgba(176,108,255,.2); overflow:hidden; }
+#novaBulle .niv i { display:block; height:100%; width:calc(var(--niv,0) * 100%); background:#b06cff; transition:width .1s; }
+#novaBulle .pt { display:inline-block; width:7px; height:7px; margin-right:6px; border-radius:50%; vertical-align:1px; background:#b06cff; }
+#novaBulle .pt.vert { background:#5cff9d; } #novaBulle .pt.jaune { background:#ffd84a; } #novaBulle .pt.rouge { background:#ff5c6c; }
 `;
 
   // ---------- construction ----------
@@ -140,7 +167,7 @@
 <h3>Raccourcis</h3><div class="grille" data-g="raccourcis"></div>
 <p class="note">Glisse vers la droite pour revenir ici. « Hors ligne » marche sans réseau ; « PC » demande le PC allumé.</p></div>`;
   const V = document.createElement("div"); V.id = "appliVue";
-  V.innerHTML = `<div class="barre"><button class="retour" type="button" aria-label="Revenir aux applis"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>Applis</button><span class="titre"></span><span class="hl"></span></div>`;
+  V.innerHTML = `<div class="barre"><button class="retour" type="button" aria-label="Revenir aux applis"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>Applis</button><span class="titre"></span><span class="hl"></span><button class="parle" type="button" aria-label="Parler à Nova"><svg viewBox="0 0 24 24"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5"/></svg></button></div>`;
   const mot = document.createElement("div"); mot.id = "applisMot"; mot.setAttribute("role", "status");
   document.body.append(voile, T, V, mot);
 
@@ -222,6 +249,8 @@
     V.appendChild(f);
     V.querySelector(".titre").textContent = o.titre;
     V.querySelector(".hl").textContent = o.hl ? "hors ligne" : "";
+    parle.hidden = !!o.micro || !window.NovaParole;   // Lecture de notes écoute déjà le piano avec son propre micro
+    suivre(!parle.hidden);
     V.classList.add("vu"); requestAnimationFrame(() => requestAnimationFrame(() => V.classList.add("on")));
     ouverte = o.cle;
     fermer(true);
@@ -231,12 +260,69 @@
   function fermerAppli(parRetour) {
     if (!ouverte) return;
     ouverte = null;
+    suivre(false);
     V.classList.remove("on");
     setTimeout(() => { if (!ouverte) { V.classList.remove("vu"); const f = V.querySelector("iframe"); if (f) f.remove(); } }, 320);
     if (!parRetour) histo(() => retirer("appli"));
     ouvrir();   // retour = la grille des applis
   }
   V.querySelector(".retour").onclick = () => fermerAppli(false);
+
+  // ---------- parler à Nova depuis l'appli (26/11) ----------
+  // Le micro, l'envoi, la voix et les sous-titres restent ceux de la page principale (window.NovaParole, index.html) :
+  // ici, seulement le petit bouton et une bulle qui montre « je t'écoute », tes mots, puis la réponse de Nova.
+  const parle = V.querySelector(".parle");
+  const bulle = document.createElement("div"); bulle.id = "novaBulle"; bulle.setAttribute("role", "status"); bulle.setAttribute("aria-live", "polite");
+  bulle.innerHTML = `<div class="toi"></div><div class="etat"></div><div class="nova"></div>`;
+  document.body.appendChild(bulle);
+  let suiviT = 0, fil = null;   // fil = l'échange en cours affiché dans la bulle
+  parle.onclick = () => {   // geste direct : NovaParole.toucher demande le micro de façon synchrone
+    const P = window.NovaParole; if (!P) { dire("Micro de Nova pas encore prêt."); return; }
+    const avant = P.etat();
+    if (P.toucher()) fil = { novaAvant: avant.novaId, t: Date.now(), fin: 0 };
+    majBulle();
+  };
+  bulle.onclick = () => { fil = null; majBulle(); };   // toucher la bulle = la ranger
+  function suivre(oui) {
+    clearInterval(suiviT); suiviT = 0; fil = null; bulle.classList.remove("vu");
+    if (oui && window.NovaParole) suiviT = setInterval(majBulle, 220);
+  }
+  const ETATS = { envoi: "envoi…", attente: "envoi…", reflechit: "Nova réfléchit…", permission: "Nova attend ta réponse : dis oui ou non",
+    connexion: "connexion au PC…", demarrage: "connexion au PC…", erreur: "souci sur le PC" };
+  const OCCUPE = /^(envoi|attente|reflechit|permission)$/;
+  function majBulle() {
+    const P = window.NovaParole; if (!P || !ouverte) return;
+    const e = P.etat(), ecoute = e.etat === "ecoute", voix = e.etat === "parle" || e.lecture, niv = Math.min(1, e.niveau || 0).toFixed(2);
+    parle.classList.toggle("ecoute", ecoute); parle.classList.toggle("voix", !ecoute && voix); parle.classList.toggle("coupe", !!e.micCoupe);
+    parle.classList.toggle("pense", !!fil && !ecoute && !voix && OCCUPE.test(e.etat));
+    parle.style.setProperty("--niv", ecoute ? niv : "0");
+    parle.setAttribute("aria-label", ecoute ? "J'ai fini (envoyer)" : voix ? "Couper Nova et parler" : "Parler à Nova");
+    if (!fil && ecoute) fil = { novaAvant: e.novaId, t: Date.now(), fin: 0 };   // mains libres : il parle sans toucher le bouton
+    if (!fil) { bulle.classList.remove("vu"); return; }
+    const reponse = !ecoute && e.novaId && e.novaId !== fil.novaAvant && e.nova ? e.nova : "";
+    let etat = "";
+    if (ecoute) etat = `<span class="niv" style="--niv:${niv}"><i></i></span>je t'écoute…`;
+    else if (!reponse && ETATS[e.etat]) etat = ETATS[e.etat];
+    else if (!reponse && !e.connecte) etat = ETATS.connexion;
+    const q = sel => bulle.querySelector(sel);
+    const toiT = (e.toi || "").trim();
+    if (q(".toi").textContent !== toiT) q(".toi").textContent = toiT;
+    if (q(".etat").innerHTML !== etat) q(".etat").innerHTML = etat;
+    const n = q(".nova");
+    if (reponse) {
+      if (n.dataset.id !== String(e.novaId)) {
+        n.dataset.id = String(e.novaId); n.textContent = "";
+        const pt = document.createElement("span"); pt.className = "pt " + (e.pastille || ""); n.append(pt, document.createTextNode(reponse));
+      }
+    } else if (n.childNodes.length) { n.textContent = ""; delete n.dataset.id; }
+    bulle.classList.add("vu");
+    // fin de l'échange : la réponse lue (ou affichée) reste le temps de la lire, puis la bulle s'efface
+    const calme = !ecoute && !voix && !OCCUPE.test(e.etat);
+    if (calme && (reponse || Date.now() - fil.t > 4000)) {
+      if (!fil.fin) fil.fin = Date.now() + (reponse ? Math.min(14000, 4500 + reponse.length * 45) : 2500);
+      else if (Date.now() > fil.fin) { fil = null; bulle.classList.remove("vu"); }
+    } else fil.fin = 0;
+  }
 
   let enCours = false;
   async function ouvrirPc(cle, b) {

@@ -131,29 +131,50 @@
   const indexVu = (c) => { if (!k) return -1; const j = double ? (c ? 2 * s : 2 * s - 1) : (c ? s : -1); return j >= 0 && j < nb() ? j : -1; };
   const centre = (i) => ({ x: bx + (double && i % 2 === 1 ? 0.5 : 1.5) * pw, y: by + ph / 2 });
   const signature = () => (k ? k.pages.map((pg) => pg.id + ":" + (pg.v || 0)).join(",") + "|" + k.nom : "");
+  // un petit rond « ⋯ » discret au coin de la page ; il ouvre un mini-menu Sortir / Jeter / Ranger (le geste de tirer la page reste le moyen rapide)
+  const IC_R = "M4 4h6v7H4zM14 4h6v7h-6zM4 14h6v6H4zM14 14h6v6h-6z";
   const past = [0, 1].map((c) => {
-    const e = U.el("div", "bascule pastille", el); e.hidden = true;
-    for (const [quoi, nom, aide] of [["sortir", "Sortir", "Sortir sur le bureau"], ["jeter", "Jeter", "Jeter à la corbeille (Suppr)"]]) {
-      const b = U.el("button", "", e); b.dataset.quoi = quoi; b.title = aide; b.setAttribute("aria-label", aide);
-      b.innerHTML = `<svg viewBox="0 0 24 24"><path d="${IC_P[quoi]}"/></svg>`;
+    const e = U.el("div", "pastille", el); e.hidden = true;
+    const plus = U.el("button", "plus", e); plus.title = "Options de la page"; plus.setAttribute("aria-label", "Options de la page"); plus.setAttribute("aria-haspopup", "menu");
+    plus.innerHTML = `<svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg>`;
+    const menu = U.el("div", "menu-page", e); menu.setAttribute("role", "menu");
+    for (const [quoi, nom, aide, ic] of [["sortir", "Sortir", "Sortir sur le bureau", IC_P.sortir], ["jeter", "Jeter", "Jeter à la corbeille (Suppr)", IC_P.jeter], ["ranger", "Ranger, trier", "Ranger et trier les pages (Espace)", IC_R]]) {
+      const b = U.el("button", "", menu); b.dataset.quoi = quoi; b.title = aide; b.setAttribute("aria-label", aide); b.setAttribute("role", "menuitem");
+      b.innerHTML = `<svg viewBox="0 0 24 24"><path d="${ic}"/></svg>`;
       U.el("span", "", b).textContent = nom;
     }
-    const x = { el: e, i: -1 };
-    e.addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (!b || x.i < 0) return; choix = c; if (b.dataset.quoi === "jeter") K.jeterPage(x.i); else K.sortirPage(x.i); });
+    const x = { el: e, i: -1, ouvert: false };
+    e.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+    e.addEventListener("click", (ev) => {
+      const b = ev.target.closest("button"); if (!b || x.i < 0) return;
+      choix = c;
+      if (b === plus) { const o = !x.ouvert; fermerMenus(); x.ouvert = o; e.classList.toggle("ouvert", o); S.jouer("pose", 0.35); return; }
+      fermerMenus();
+      if (b.dataset.quoi === "jeter") K.jeterPage(x.i); else if (b.dataset.quoi === "sortir") K.sortirPage(x.i); else K.fouiller();
+    });
     e.addEventListener("pointerenter", () => choisir(c));
     return x;
   });
+  function fermerMenus() { for (const p of past) { p.ouvert = false; p.el.classList.remove("ouvert"); } }
+  // on touche ailleurs : le menu se referme
+  addEventListener("pointerdown", (e) => { if (past.some((p) => p.ouvert) && !(e.target.closest && e.target.closest(".pastille"))) fermerMenus(); }, true);
+  K.menuPage = function (c, veut) {                           // pour les essais : ouvre / ferme le menu « ⋯ » d'un côté
+    const p = past[c === undefined ? choix : c]; if (!p || p.el.hidden) return false;
+    const o = veut === undefined ? !p.ouvert : !!veut; fermerMenus(); p.ouvert = o; p.el.classList.toggle("ouvert", o); return true;
+  };
   function choisir(c) { if (c === choix || indexVu(c) < 0) return; choix = c; majPastilles(); }
   function majPastilles() {
     const libre = ouvert && !anime && !vols.length && fouille.hidden && !arr;
     if (indexVu(choix) < 0) choix = indexVu(1) >= 0 ? 1 : 0;
     past.forEach((p, c) => {
-      const j = libre ? indexVu(c) : -1; p.i = j; p.el.hidden = j < 0;
+      const j = libre ? indexVu(c) : -1;
+      if (j !== p.i) { p.ouvert = false; p.el.classList.remove("ouvert"); }   // la page a changé (tournée, sortie) : menu refermé
+      p.i = j; p.el.hidden = j < 0;
       if (j < 0) return;
       const photo = !!k.pages[j].image, enHaut = !double || (photo && pw < 470);       // téléphone (une seule page) : en haut, loin des messages et de la pastille photo
-      p.el.classList.toggle("court", photo || pw < 460); p.el.classList.toggle("a-gauche", !c);
+      p.el.classList.toggle("a-gauche", !c); p.el.classList.toggle("en-haut", enHaut);
       p.el.classList.toggle("choisie", c === choix && indexVu(1 - c) >= 0);
-      p.el.style.left = Math.round(c ? bx + 2 * pw - 12 : bx + 12) + "px"; p.el.style.top = Math.round(enHaut ? by + 10 : by + ph - 8) + "px";
+      p.el.style.left = Math.round(c ? bx + 2 * pw - 8 : bx + 8) + "px"; p.el.style.top = Math.round(enHaut ? by + 8 : by + ph - 8) + "px";
     });
   }
   // la page décollée : une copie qui suit le doigt, ou qui s'envole

@@ -79,7 +79,7 @@
     <i class="sep"></i>
     <button data-action="annuler" title="Annuler (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M9 7L4 12l5 5M4 12h10a5 5 0 010 10h-2"/></svg></button>
     <button data-action="refaire" title="Refaire (Ctrl+Y)"><svg viewBox="0 0 24 24"><path d="M15 7l5 5-5 5M20 12H10a5 5 0 000 10h2"/></svg></button>
-    <button data-action="doigt" title="Doigt : écrire ou déplacer"><svg viewBox="0 0 24 24"><path d="M9 12V5a1.5 1.5 0 013 0v6l5 1.2c1 .3 1.6 1.2 1.4 2.2L17.5 20h-7L7 15.5c-.6-.9.4-2 1.3-1.4z"/></svg></button>
+    <button data-action="doigt" title="Mode sélection ou écriture (le stylet écrit toujours)"><svg viewBox="0 0 24 24"><path d="M9 12V5a1.5 1.5 0 013 0v6l5 1.2c1 .3 1.6 1.2 1.4 2.2L17.5 20h-7L7 15.5c-.6-.9.4-2 1.3-1.4z"/></svg></button>
     <i class="sep"></i>
     <button data-action="propre" class="large" title="Mettre au propre"><svg viewBox="0 0 24 24"><path d="M5 19L16 8M14 6l4 4M18 3v3M16.5 4.5h3M7 4v2M6 5h2M20 13v2M19 14h2"/></svg><span>Au propre</span></button>
   </div>
@@ -106,10 +106,12 @@
     <button data-action="avant" title="Page précédente (←)"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
     <button data-action="apres" title="Page suivante (→)"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
     <button data-action="ajouter" title="Ajouter une page (+)"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
-    <button data-action="fouiller" title="Fouiller et réorganiser (Espace)"><svg viewBox="0 0 24 24"><path d="M4 4h6v7H4zM14 4h6v7h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg></button>
+    <button data-action="fouiller" title="Ranger et trier les pages (Espace)"><svg viewBox="0 0 24 24"><path d="M4 4h6v7H4zM14 4h6v7h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg></button>
     <button data-action="fermer" title="Refermer (Échap)"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   </div>
   <div class="fouille" hidden>
+    <div class="tri"><span class="astuce">Appui long sur une page, puis glisse-la à sa place.</span><button class="trier" title="Trier les pages" aria-haspopup="menu"><svg viewBox="0 0 24 24"><path d="M7 4v16M3 16l4 4 4-4M14 6h7M14 11h5M14 16h3"/></svg><span>Trier</span></button>
+      <div class="menu-tri" role="menu" hidden><button data-tri="recent" role="menuitem">Récent d'abord</button><button data-tri="ancien" role="menuitem">Ancien d'abord</button><button data-tri="titre" role="menuitem">Par titre (A → Z)</button><button data-tri="origine" role="menuitem">Ordre d'origine</button></div></div>
     <div class="grille"></div>
     <div class="sortie"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M4 20h16"/></svg><span>Sortir sur le bureau</span></div>
   </div>
@@ -123,8 +125,10 @@
       <li><b>Ranger</b> : pose une feuille ou une photo sur un classeur.</li>
       <li><b>Ouvrir</b> : un petit coup sur la feuille ou le classeur.</li>
       <li><b>Tourner les pages</b> : tire la page, ou flèches ← →, ou la molette.</li>
-      <li><b>Fouiller</b> : bouton grille ou Espace, puis déplace les pages.</li>
-      <li><b>Enlever une page</b> : tire-la vers le haut ou le bas pour la sortir du classeur, ou touche « Sortir » / « Jeter » au coin de la page (Suppr la jette).</li>
+      <li><b>Ranger les pages</b> : bouton grille ou Espace, puis appui long sur une page et glisse-la à sa place (doigt, stylet ou souris).</li>
+      <li><b>Trier</b> : dans le rangement, le petit bouton « Trier » : récent, ancien, par titre, ou l'ordre d'origine. L'ordre suit sur tous les appareils.</li>
+      <li><b>Enlever une page</b> : tire-la vers le haut ou le bas pour la sortir du classeur, ou le petit bouton « ⋯ » au coin de la page : Sortir ou Jeter (Suppr la jette).</li>
+      <li><b>Feuille agrandie</b> : par défaut le doigt et la souris déplacent et zooment, le stylet écrit. Le bouton main passe en mode écriture ; le dernier mode est gardé.</li>
       <li><b>Surligner</b> : le surligneur (touche H) passe sous le texte ; encore H change de couleur. Avec le bouton du stylet ou le clic droit, on surligne sans changer d'outil. La gomme l'efface.</li>
       <li><b>Photo</b> : la pastille « Original / Au propre » montre la photo d'origine ou la feuille au propre (touche P sur la feuille).</li>
       <li class="pc"><b>Clavier</b> : N musique, L ligné, Q carreaux, B blanc, C classeur, P photo, Échap fermer, Suppr jeter, F fluidité.</li>

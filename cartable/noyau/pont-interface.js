@@ -59,14 +59,16 @@
     async function versUI(o, z, ancien) {
       const x = ancien || {};
       const pos = o.pos || { x: 0, y: 0, a: 0 };
-      const base = { id: uId(o.id), x: pos.x, y: pos.y, r: pos.a || 0, z };
+      const base = { id: uId(o.id), x: pos.x, y: pos.y, r: pos.a || 0, z, cree: o.cree || 0 };
       if (o.type === "classeur" || o.type === "cahier") {
         const pages = [];
         const anciennes = new Map((x.pages || []).map((p) => [p.id, p]));
         for (const e of c.enfants(o.id)) if (e.type === "feuille") pages.push(await versUI(e, 0, anciennes.get(uId(e.id))));
         (x.pages || []).forEach((p, i) => { if (enCreation.has(p.id) && !pages.includes(p)) pages.splice(Math.min(i, pages.length), 0, p); });
         // couv : l'image de couverture choisie (adresse blob:), "" = couverture d'origine en cuir
-        return Object.assign(x, base, { type: "classeur", nom: o.titre || "", couleur: o.couleur || "#2f5d8a", pages, sorte: o.type, couv: await urlDe(o.ext_couv) });
+        // ordreAvant : l'ordre des feuilles d'avant le premier tri (« ordre d'origine »), en ids de l'interface ; null = pas trié
+        const oa = Array.isArray(o.ext_ordreAvant) ? o.ext_ordreAvant.map(uId) : null;
+        return Object.assign(x, base, { type: "classeur", nom: o.titre || "", couleur: o.couleur || "#2f5d8a", pages, sorte: o.type, couv: await urlDe(o.ext_couv), ordreAvant: oa });
       }
       const traits = traitsUI(o.id);
       const memeEncre = x.traits && x.traits.length === traits.length && x.traits.every((t, i) => t.id === traits[i].id);
@@ -175,6 +177,11 @@
       if (u.type === "classeur") {
         if ((u.nom || "") !== (o.titre || "")) c.renommer(id, u.nom || "");
         if (u.couleur && u.couleur !== o.couleur) c.modifier(id, { couleur: u.couleur });
+        if (u.ordreAvant !== undefined) {                   // tri fait dans l'interface : on garde (ou oublie) l'ordre d'origine
+          const voulu = Array.isArray(u.ordreAvant) ? u.ordreAvant.map((p) => nId(p) || p).filter((p) => c.obtenir(p)).slice(0, 1200) : null;
+          const actuel = Array.isArray(o.ext_ordreAvant) ? o.ext_ordreAvant : null;
+          if (JSON.stringify(voulu) !== JSON.stringify(actuel)) c.modifier(id, { ext_ordreAvant: voulu });
+        }
       } else {
         if (u.type === "feuille" && VERS_NOYAU[u.papier] && VERS_UI[o.papier] !== u.papier) c.modifier(id, { papier: VERS_NOYAU[u.papier] });
         if (typeof u.titre === "string" && u.titre !== (o.titre || "")) c.renommer(id, u.titre);

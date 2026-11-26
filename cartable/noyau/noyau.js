@@ -480,6 +480,40 @@
           }
         });
       },
+      // trie les feuilles d'un classeur : "recent" | "ancien" (date de création), "titre" (A→Z, sans titre à la fin), "origine"
+      // (remet l'ordre d'avant le premier tri, gardé dans ext_ordreAvant). Rien n'est jeté. -> { change, mode, retour? }
+      ordonner(parent, mode) {
+        const k = objets.get(parent);
+        if (!vivant(k) || !["classeur", "cahier", "intercalaire"].includes(k.type)) throw new Error("ordre : classeur introuvable");
+        const feuilles = enfants(parent).filter((o) => o.type === "feuille");
+        const avant = feuilles.map((o) => o.id);
+        let voulu;
+        if (mode === "origine") {
+          const sauve = Array.isArray(k.ext_ordreAvant) ? k.ext_ordreAvant : null;
+          if (!sauve) return { change: false, mode, retour: false };
+          const reste = new Set(avant);
+          voulu = sauve.filter((i) => reste.delete(i));
+          voulu.push(...avant.filter((i) => reste.has(i)));             // ajoutées depuis : à la suite, dans l'ordre actuel
+          return transaction(() => {
+            if (voulu.join() !== avant.join()) api.reordonnerTout(parent, voulu);
+            ecrire(parent, { ext_ordreAvant: null });
+            return { change: voulu.join() !== avant.join(), mode, retour: true };
+          });
+        }
+        const rang = new Map(avant.map((x, i) => [x, i]));
+        const par = (f) => [...feuilles].sort((a, b) => f(a, b) || rang.get(a.id) - rang.get(b.id)).map((o) => o.id);
+        if (mode === "recent") voulu = par((a, b) => (b.cree || 0) - (a.cree || 0));
+        else if (mode === "ancien") voulu = par((a, b) => (a.cree || 0) - (b.cree || 0));
+        else if (mode === "titre") {
+          const t = (o) => String(o.titre || "").trim();
+          voulu = par((a, b) => (!t(a) - !t(b)) || (t(a) && t(b) ? t(a).localeCompare(t(b), "fr", { numeric: true, sensitivity: "base" }) : 0));
+        } else throw new Error("ordre : tri inconnu « " + mode + " »");
+        return transaction(() => {
+          if (!Array.isArray(k.ext_ordreAvant) && voulu.join() !== avant.join()) ecrire(parent, { ext_ordreAvant: avant.slice(0, 1200) });
+          if (voulu.join() !== avant.join()) api.reordonnerTout(parent, voulu);
+          return { change: voulu.join() !== avant.join(), mode };
+        });
+      },
       renommer(id, titre) { ecrire(id, { titre: String(titre || "").slice(0, 200) }); },
       modifier(id, champs) { return ecrire(id, champs); },   // champs libres : préfixe ext_ (voir API.md)
 
@@ -928,6 +962,35 @@
           if (!k) { r.dit = "« " + (o.titre || "Cette page") + " » est déjà sur le bureau."; break; }
           c.sortir(o.id, placeLibre());
           r.de = k.id; r.dit = "Page sortie de « " + (k.titre || k.type) + " » et posée sur le bureau."; break;
+        }
+        case "ordre": {                                       // « trie le classeur X par date / titre », « remets l'ordre d'origine », « mets la feuille Y en 2 »
+          const k = c.trouver(cmd.quoi, { type: "classeur" }) || c.trouver(cmd.quoi, { type: "cahier" });
+          if (!k) throw new Error("je ne trouve pas le classeur « " + cmd.quoi + " »");
+          const nom = k.titre || "le classeur";
+          const tri = plat(cmd.tri || "");
+          r.id = k.id;
+          if (tri === "deplacer") {
+            const feuilles = c.enfants(k.id).filter((o) => o.type === "feuille");
+            let f = null;
+            const m = plat(cmd.feuille || "").match(/^(?:la |page |feuille |la page |la feuille )*([0-9]{1,4})$/);
+            if (m) f = feuilles[Number(m[1]) - 1] || null;
+            if (!f) { const q = plat(cmd.feuille || ""); f = feuilles.find((o) => plat(o.titre || "") === q) || feuilles.find((o) => q && plat(o.titre || "").includes(q)) || null; }
+            if (!f) throw new Error("je ne trouve pas la feuille « " + cmd.feuille + " » dans « " + nom + " »");
+            const pos = Math.max(1, Math.min(Math.floor(Number(cmd.position) || 1), feuilles.length));
+            const ids = feuilles.map((o) => o.id).filter((i) => i !== f.id);
+            ids.splice(pos - 1, 0, f.id);
+            c.reordonnerTout(k.id, ids);                        // l'ordre d'avant un tri reste gardé (« ordre d'origine » le remet)
+            r.feuille = f.id;
+            r.dit = "« " + (f.titre || "La feuille") + " » est maintenant en position " + pos + " dans « " + nom + " ».";
+            break;
+          }
+          const mode = { date: "recent", recent: "recent", "plus recent": "recent", ancien: "ancien", "plus ancien": "ancien", titre: "titre", nom: "titre", alphabetique: "titre", origine: "origine" }[tri];
+          if (!mode) throw new Error("tri inconnu « " + (cmd.tri || "") + " » (date, ancien, titre, origine ou deplacer)");
+          const res = c.ordonner(k.id, mode);
+          r.dit = mode === "origine" ? (res.retour ? "Ordre d'origine remis dans « " + nom + " »." : "« " + nom + " » est déjà dans l'ordre d'origine.")
+                : !res.change ? "« " + nom + " » était déjà dans cet ordre."
+                : "« " + nom + " » trié " + ({ recent: "du plus récent au plus ancien", ancien: "du plus ancien au plus récent", titre: "par titre" })[mode] + ".";
+          break;
         }
         case "couverture": {                                  // image de couverture d'un classeur (l'hôte a lu et vérifié l'image) ; origine = on la retire
           const o = c.trouver(cmd.quoi, { type: "classeur" }) || c.trouver(cmd.quoi, { type: "cahier" });
