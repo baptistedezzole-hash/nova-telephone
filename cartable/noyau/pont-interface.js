@@ -51,7 +51,9 @@
       return c.traits(fid).map((t) => {
         const p = t.d.pts, q = [];
         for (let i = 0; i + 2 < p.length; i += 4) q.push(arrondi(p[i] / K), arrondi(p[i + 1] / K), p[i + 2]);
-        return { id: traitU.get(t.id) || t.id, c: t.d.c, e: arrondi(t.d.e / K), p: q };
+        const u = { id: traitU.get(t.id) || t.id, c: t.d.c, e: arrondi(t.d.e / K), p: q };
+        if (t.d.outil === "surligneur") u.s = 1;            // surlignage : peint sous le texte par l'interface
+        return u;
       });
     }
     async function versUI(o, z, ancien) {
@@ -73,7 +75,9 @@
       if (o.type === "feuille" && o.papier === "photo") {
         const img = o.image || {};
         const l = 840, h = Math.round(840 * (img.h || 1414) / (img.l || 1000));
+        const avant = x.image;
         const ph = Object.assign(x, base, commun, { type: "photo", image: await urlDe(img), l, h, titre: o.titre || "" });
+        if (avant !== undefined && avant !== ph.image) ph.v = (ph.v || 0) + 1;          // image remplacée (paroles refaites) : la page se repeint
         if (ph.propre !== o.propre) ph.v = (ph.v || 0) + 1;                            // les images gardées (classeur) se refont
         if (o.propre !== undefined) ph.propre = o.propre; else delete ph.propre;      // photo mise au propre (scan net ou redessinée) : l'image d'origine reste
         ph.voirPropre = !!o.ext_voirPropre;
@@ -159,7 +163,7 @@
         let n = traitN.get(t.id) || (c.obtenir(t.id) && c.obtenir(t.id).type === "trait" ? t.id : null);
         if (!n || c.obtenir(n).supprime) {
           if (!Array.isArray(t.p) || t.p.length < 3) continue;
-          n = c.ajouterTrait(id, { pts: versPts(t.p), c: t.c, e: arrondi((t.e || 2.4) * K), outil: "stylo", t0: t0() });
+          n = c.ajouterTrait(id, { pts: versPts(t.p), c: t.c, e: arrondi((t.e || 2.4) * K), outil: t.s ? "surligneur" : "stylo", t0: t0() });
           traitN.set(t.id, n); traitU.set(n, t.id);
         }
         voulus.add(n);

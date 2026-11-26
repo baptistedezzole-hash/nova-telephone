@@ -957,6 +957,19 @@
             dans = k ? k.id : c.creerClasseur({ titre: cmd.dans, pos: placeLibre() });
             if (!k) r.classeurCree = true;
           }
+          // « remplace » : la même page refaite (paroles dans un autre style, autre tonalité). L'image change sur la feuille d'origine :
+          // elle garde sa place, ses annotations et son surlignage. Feuille introuvable : import normal.
+          if (cmd.remplace) {
+            const vieux = c.trouver(cmd.remplace, { type: "feuille" });
+            if (vieux && vieux.papier === "photo" && plat(vieux.titre) === plat(cmd.remplace)) {
+              const mime = cmd.mime || "image/jpeg", l = cmd.l || 1000, h = cmd.h || 1414;
+              const sha = await c.ajouterBlob(cmd.octets, mime);
+              c.modifier(vieux.id, { image: { sha, l, h, mime }, format: { l: 210, h: Math.round(210 * h / l) }, titre: cmd.titre || vieux.titre });
+              r.id = vieux.id; r.remplacee = true;
+              r.dit = "« " + (cmd.titre || vieux.titre) + " » refaite, annotations gardées.";
+              break;
+            }
+          }
           r.id = await c.ajouterImage(cmd.octets, { mime: cmd.mime, l: cmd.l, h: cmd.h, titre: cmd.titre || "Photo", dans, pos: dans ? undefined : placeLibre() });
           if (cmd.partitionOctets && cmd.partitionOctets.length) {              // partition lue par la chaîne automatique : MusicXML gardé comme blob
             const sha = await c.ajouterBlob(cmd.partitionOctets, "image/vnd.cartable.partition");

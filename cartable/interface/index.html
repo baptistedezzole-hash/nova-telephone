@@ -62,11 +62,16 @@
   <div class="outils">
     <button data-outil="stylo" class="actif" title="Stylo (S)"><svg viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19zM14 7l3 3"/></svg></button>
     <button data-outil="gomme" title="Gomme (G)"><svg viewBox="0 0 24 24"><path d="M5 15l8-9 6 5-8 9H8zM9 20h11M10 9.5l6 5"/></svg></button>
+    <button data-outil="surligneur" title="Surligneur (H) — encore H : couleur suivante"><svg viewBox="0 0 24 24"><path class="sur-trait" d="M4 20.5h9"/><path d="M8.5 16.5l-2-2L15 6l3 3zM15 6l2-2 3 3-2 2M6.5 14.5L5 18l3.5-1.5"/></svg></button>
     <i class="sep"></i>
     <button data-couleur="#1b1b26" class="encre-c actif" title="Noir"><i></i></button>
     <button data-couleur="#1c3fa8" class="encre-c" title="Bleu"><i></i></button>
     <button data-couleur="#b8242c" class="encre-c" title="Rouge"><i></i></button>
     <button data-couleur="#1f7a47" class="encre-c" title="Vert"><i></i></button>
+    <button data-surcouleur="#fff27a" class="sur-c" title="Surligneur jaune"><i></i></button>
+    <button data-surcouleur="#b6f2a0" class="sur-c" title="Surligneur vert"><i></i></button>
+    <button data-surcouleur="#ffbfdc" class="sur-c" title="Surligneur rose"><i></i></button>
+    <button data-surcouleur="#a9dcff" class="sur-c" title="Surligneur bleu"><i></i></button>
     <i class="sep"></i>
     <button data-taille="1.6" class="taille" title="Fin"><i style="--t:4px"></i></button>
     <button data-taille="2.6" class="taille actif" title="Moyen"><i style="--t:7px"></i></button>
@@ -120,6 +125,7 @@
       <li><b>Tourner les pages</b> : tire la page, ou flèches ← →, ou la molette.</li>
       <li><b>Fouiller</b> : bouton grille ou Espace, puis déplace les pages.</li>
       <li><b>Enlever une page</b> : tire-la vers le haut ou le bas pour la sortir du classeur, ou touche « Sortir » / « Jeter » au coin de la page (Suppr la jette).</li>
+      <li><b>Surligner</b> : le surligneur (touche H) passe sous le texte ; encore H change de couleur. Avec le bouton du stylet ou le clic droit, on surligne sans changer d'outil. La gomme l'efface.</li>
       <li><b>Photo</b> : la pastille « Original / Au propre » montre la photo d'origine ou la feuille au propre (touche P sur la feuille).</li>
       <li class="pc"><b>Clavier</b> : N musique, L ligné, Q carreaux, B blanc, C classeur, P photo, Échap fermer, Suppr jeter, F fluidité.</li>
     </ul>

@@ -99,7 +99,44 @@
     for (let i = 1; i < n; i++) T.morceau(g, t, i, k);
     T.finTrait(g, t, k);
   };
-  T.dessinerTraits = function (g, traits, k) { if (traits) for (const t of traits) T.dessinerTrait(g, t, k); };
+  T.dessinerTraits = function (g, traits, k) { if (traits) for (const t of traits) if (!t.s) T.dessinerTrait(g, t, k); };   // l'encre seulement : le surlignage se dessine avant (T.dessinerSurlignes)
+
+  // ---- le surligneur ----
+  // un trait surligné : { id, s: 1, c: couleur claire, e: largeur fixe, p: [...] }. Il est peint en « darken » sur le papier ou la photo :
+  // le blanc prend la couleur, le texte noir reste noir (le surlignage passe sous le texte), et repasser au même endroit ne fonce pas.
+  T.SURLIGNEURS = ["#fff27a", "#b6f2a0", "#ffbfdc", "#a9dcff"];
+  T.largeurSur = (taille) => Math.round(6 + 6 * (taille || 2.6));
+  function debutSur(g, t, k) { g.save(); g.globalCompositeOperation = "darken"; g.globalAlpha = 1; g.strokeStyle = t.c; g.lineCap = "round"; g.lineJoin = "round"; g.lineWidth = Math.max(1, t.e * k); }
+  T.dessinerSurligne = function (g, t, k) {
+    const p = t.p, n = p.length / 3; if (n < 1) return;
+    debutSur(g, t, k);
+    g.beginPath(); g.moveTo(p[0] * k, p[1] * k);
+    if (n === 1) g.lineTo(p[0] * k + 0.01, p[1] * k);
+    else {
+      for (let i = 1; i < n - 1; i++) g.quadraticCurveTo(p[3 * i] * k, p[3 * i + 1] * k, (p[3 * i] + p[3 * i + 3]) / 2 * k, (p[3 * i + 1] + p[3 * i + 4]) / 2 * k);
+      g.lineTo(p[3 * n - 3] * k, p[3 * n - 2] * k);
+    }
+    g.stroke(); g.restore();
+  };
+  T.dessinerSurlignes = function (g, traits, k) { if (traits) for (const t of traits) if (t.s) T.dessinerSurligne(g, t, k); };
+  // pendant qu'on surligne : le bout qui se termine au point i
+  T.morceauSur = function (g, t, i, k) {
+    const p = t.p, a = 3 * Math.max(0, i - 1), b = 3 * i;
+    debutSur(g, t, k);
+    g.beginPath(); g.moveTo(p[a] * k, p[a + 1] * k); g.lineTo(p[b] * k + (a === b ? 0.01 : 0), p[b + 1] * k); g.stroke(); g.restore();
+  };
+  // la gomme touche-t-elle ce surlignage ? (distance aux segments, pas seulement aux points : un trait redressé n'a que deux points)
+  T.toucheSur = function (t, x, y, R) {
+    const p = t.p, r = R + t.e / 2, r2 = r * r;
+    for (let j = 0; j < p.length; j += 3) {
+      const ax = p[j], ay = p[j + 1], bx = j + 3 < p.length ? p[j + 3] : ax, by = j + 3 < p.length ? p[j + 4] : ay;
+      const vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy;
+      const u = l2 ? Math.max(0, Math.min(1, ((x - ax) * vx + (y - ay) * vy) / l2)) : 0;
+      const dx = ax + u * vx - x, dy = ay + u * vy - y;
+      if (dx * dx + dy * dy < r2) return true;
+    }
+    return false;
+  };
 
   // ---- la version « au propre » rendue par la reconnaissance ----
   // formes acceptées : { calque: image/toile transparente à la taille de la page } | { lignes: [{x,y,h,texte}] } | { traits: [...] }
@@ -154,8 +191,8 @@
     } else if (!cadre) T.dessinerPapier(g, l, h, o.papier);
     else { g.save(); g.beginPath(); g.rect(0, 0, ol * k, oh * k); g.clip(); T.dessinerPapier(g, ol * k, oh * k, o.papier); g.restore(); }
     if (!options.sansEncre) {
-      if (o.propre && o.voirPropre) { T.dessinerPropre(g, o.propre, k, o); if (o.traits) T.dessinerTraits(g, o.traits.slice(o.propre.n || 0), k); }   // ce qui a été écrit après reste par-dessus
-      else T.dessinerTraits(g, o.traits, k);
+      if (o.propre && o.voirPropre) { T.dessinerPropre(g, o.propre, k, o); T.dessinerSurlignes(g, o.traits, k); if (o.traits) T.dessinerTraits(g, o.traits.slice(o.propre.n || 0), k); }   // ce qui a été écrit après reste par-dessus
+      else { T.dessinerSurlignes(g, o.traits, k); T.dessinerTraits(g, o.traits, k); }
     }
     g.setTransform(1, 0, 0, 1, 0, 0);
     return c;

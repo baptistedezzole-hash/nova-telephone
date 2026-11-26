@@ -132,6 +132,7 @@
       else if (m && (l === "y" || (l === "z" && e.shiftKey))) F.action("refaire");
       else if (!m && l === "s") F.outil("stylo");
       else if (!m && l === "g") F.outil("gomme");
+      else if (!m && l === "h") F.outil("surligneur");
       else if (!m && l === "p") F.action("propre");
       else return;
       return e.preventDefault();

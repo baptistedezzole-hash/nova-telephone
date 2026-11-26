@@ -9,8 +9,9 @@
   const cNet = el.querySelector("canvas.net"), bascule = el.querySelector(".bascule");
   // Pas de toile « desynchronized » : sur un vrai écran, Windows peut la sortir en superposition matérielle quand la feuille
   // est grande, et le transparent devient noir. Une toile ordinaire, composée avec le reste, ne peut pas faire ça.
-  const gP = cPro.getContext("2d"), gE = cEnc.getContext("2d"), gN = cNet.getContext("2d");
-  const etat = { outil: "stylo", couleur: "#1b1b26", taille: 2.6, doigtEcrit: true, styletVu: false };
+  const gP = cPro.getContext("2d"), gE = cEnc.getContext("2d"), gN = cNet.getContext("2d"), gPap = cPap.getContext("2d");
+  const etat = { outil: "stylo", couleur: "#1b1b26", surCouleur: T.SURLIGNEURS[0], taille: 2.6, doigtEcrit: true, styletVu: false };
+  try { const c = localStorage.getItem("cartable-surligneur"); if (T.SURLIGNEURS.includes(c)) etat.surCouleur = c; } catch (e) { /* pas de stockage : jaune */ }
   F.etat = etat;
   let o = null, ouvert = false, anime = false, occupe = false, rect = null, opt = null, change = false;
   let ol = 840, oh = 1188, e0 = 1, w = 100, h = 100, k = 1, zone = null;
@@ -48,13 +49,26 @@
   function appliquer() { sup.style.transform = forme(vue.x + w * vue.z / 2, vue.y + h * vue.z / 2, vue.z, 0); planifierNet(); }
   const versPage = (sx, sy) => [(sx - vue.x) / (e0 * vue.z), (sy - vue.y) / (e0 * vue.z)];
 
+  // Le surlignage est peint sur le papier (toile opaque), sous l'encre : il passe sous le texte. surPeint = le papier en porte.
+  let surPeint = false;
+  const aSur = () => !!(o && o.traits && o.traits.some((t) => t.s));
+  const proOpaque = () => !!(o && o.image && o.propre);     // photo au propre : le scan net recouvre le papier, le surlignage y est peint aussi
+  function peindrePapier() { T.rendrePage(o, cPap.width, { toile: cPap, sansEncre: true }); T.dessinerSurlignes(gPap, o.traits, k); surPeint = aSur(); }
   function peindreTout() {
-    T.rendrePage(o, cPap.width, { toile: cPap, sansEncre: true });
-    dessinerPropre(); redessiner();
+    peindrePapier();
+    dessinerPropre(); redessinerEncre();
     cPro.style.opacity = o.voirPropre && o.propre ? 1 : 0;
   }
-  function dessinerPropre() { gP.clearRect(0, 0, cPro.width, cPro.height); if (o.propre) T.dessinerPropre(gP, o.propre, k, o); if (ouvert && !anime) planifierNet(60); }
+  function dessinerPropre() {
+    gP.setTransform(1, 0, 0, 1, 0, 0); gP.clearRect(0, 0, cPro.width, cPro.height);
+    if (o.propre) { T.dessinerPropre(gP, o.propre, k, o); gP.setTransform(1, 0, 0, 1, 0, 0); if (proOpaque()) T.dessinerSurlignes(gP, o.traits, k); }
+    if (ouvert && !anime) planifierNet(60);
+  }
   function redessiner() {
+    if (surPeint || aSur()) { peindrePapier(); if (proOpaque()) dessinerPropre(); }
+    redessinerEncre();
+  }
+  function redessinerEncre() {
     gE.clearRect(0, 0, cEnc.width, cEnc.height);
     T.dessinerTraits(gE, o.voirPropre && o.propre ? o.traits.slice(o.propre.n || 0) : o.traits, k);
     if (net) peindreNet();
@@ -94,8 +108,8 @@
       gN.imageSmoothingEnabled = true; gN.imageSmoothingQuality = "high";
       gN.drawImage(e.img, 0, 0, L, H);
     } else T.dessinerPapier(gN, L, H, o.papier);
-    if (o.voirPropre && o.propre) { T.dessinerPropre(gN, o.propre, K, o); gN.setTransform(1, 0, 0, 1, -net.ox, -net.oy); T.dessinerTraits(gN, o.traits.slice(o.propre.n || 0), K); }
-    else T.dessinerTraits(gN, o.traits, K);
+    if (o.voirPropre && o.propre) { T.dessinerPropre(gN, o.propre, K, o); gN.setTransform(1, 0, 0, 1, -net.ox, -net.oy); T.dessinerSurlignes(gN, o.traits, K); T.dessinerTraits(gN, o.traits.slice(o.propre.n || 0), K); }
+    else { T.dessinerSurlignes(gN, o.traits, K); T.dessinerTraits(gN, o.traits, K); }
     gN.setTransform(1, 0, 0, 1, -net.ox, -net.oy);
     return true;
   }
@@ -117,7 +131,7 @@
     cacherNet(); redimAttente = false; eclat.hidden = true;
     el.hidden = false;
     mesurer(); vueInitiale(); peindreTout(); majOutils();
-    if (o.image && !T.image(o.image).pret) T.imagePrete(o).then(() => { if (o === page) { T.rendrePage(o, cPap.width, { toile: cPap, sansEncre: true }); planifierNet(0); } });
+    if (o.image && !T.image(o.image).pret) T.imagePrete(o).then(() => { if (o === page) { peindrePapier(); planifierNet(0); } });
     if (o.propre && o.propre.v === 2 && C.propre) C.propre.preparer(o).then(() => { if (o === page) dessinerPropre(); });   // photo au propre : scan net, polices
     if (o.propre && o.propre.calque && !o.propre.calqueImg) T.image(o.propre.calque).promesse.then((im) => { if (o === page && im) { o.propre.calqueImg = im; dessinerPropre(); } });
     const a = (rect && rect()) || { x: innerWidth / 2, y: innerHeight / 2, l: w * 0.5, r: 0 };
@@ -174,14 +188,41 @@
     const [x, y] = versPage(e.clientX, e.clientY);
     const gomme = etat.outil === "gomme" || (e.pointerType === "pen" && (e.button === 5 || (e.buttons & 32)));
     if (gomme) { trait = { gomme: true, ptr: p, retires: [] }; gommer(x, y); return; }
+    // le surligneur : l'outil choisi, ou le bouton du stylet / le clic droit de la souris tenu pendant le trait
+    if (etat.outil === "surligneur" || (e.pointerType !== "touch" && (e.button === 2 || (e.buttons & 2)))) {
+      trait = { sur: true, ptr: p, dx: x, dy: y, t: { id: U.id("t"), s: 1, c: etat.surCouleur, e: T.largeurSur(etat.taille), p: [Math.round(x * 10) / 10, Math.round(y * 10) / 10, 0.5] } };
+      surPeint = true; morceauSur(0);
+      return;
+    }
     const pr = e.pointerType === "pen" ? (e.pressure > 0 ? e.pressure : 0.5) : 0.6;
     trait = { ptr: p, pr, dx: x, dy: y, temps: U.boucle.estManuel() ? U.maintenant() : e.timeStamp, t: { id: U.id("t"), c: etat.couleur, e: etat.taille, p: [Math.round(x * 10) / 10, Math.round(y * 10) / 10, Math.round(pr * 100) / 100] } };
     T.debutTrait(gE, trait.t, k);
     if (net) T.debutTrait(gN, trait.t, net.K);
   }
+  function morceauSur(i) {
+    const t = trait.t;
+    T.morceauSur(gPap, t, i, k);
+    if (proOpaque()) T.morceauSur(gP, t, i, k);
+    if (net) T.morceauSur(gN, t, i, net.K);
+  }
+  // un surlignage presque droit est redressé : une bande bien horizontale sous la ligne de texte
+  function redresser(t) {
+    const p = t.p, n = p.length / 3; if (n < 3) return;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, sy = 0;
+    for (let i = 0; i < p.length; i += 3) { x0 = Math.min(x0, p[i]); x1 = Math.max(x1, p[i]); y0 = Math.min(y0, p[i + 1]); y1 = Math.max(y1, p[i + 1]); sy += p[i + 1]; }
+    if (x1 - x0 < 30 || y1 - y0 > Math.max(9, 0.07 * (x1 - x0))) return;
+    const y = Math.round(sy / n * 10) / 10;
+    t.p = [x0, y, 0.5, x1, y, 0.5];
+  }
   function point(ev) {
     const tr = trait, [x, y] = versPage(ev.clientX, ev.clientY);
     if (tr.gomme) return gommer(x, y);
+    if (tr.sur) {
+      if (Math.hypot(x - tr.dx, y - tr.dy) < 1.5) return;
+      tr.dx = x; tr.dy = y;
+      tr.t.p.push(Math.round(x * 10) / 10, Math.round(y * 10) / 10, 0.5);
+      return morceauSur(tr.t.p.length / 3 - 1);
+    }
     if (Math.hypot(x - tr.dx, y - tr.dy) < 0.6) return;
     const pr = pression(ev, tr, x, y);
     tr.dx = x; tr.dy = y;
@@ -193,6 +234,11 @@
     const tr = trait; trait = null;
     if (!tr) return;
     if (tr.gomme) { if (tr.retires.length) { pile.push({ t: "retrait", items: tr.retires }); refaits.length = 0; modifie(); } return; }
+    if (tr.sur) {
+      redresser(tr.t);
+      o.traits.push(tr.t); pile.push({ t: "ajout", trait: tr.t }); refaits.length = 0; modifie();
+      return redessiner();                                   // repeint propre : bande lissée ou redressée
+    }
     T.debutTrait(gE, tr.t, k); T.finTrait(gE, tr.t, k);
     if (net) { T.debutTrait(gN, tr.t, net.K); T.finTrait(gN, tr.t, net.K); }
     o.traits.push(tr.t); pile.push({ t: "ajout", trait: tr.t }); refaits.length = 0; modifie();
@@ -202,12 +248,18 @@
   function gommer(x, y) {
     const R = 13 / Math.sqrt(vue.z), R2 = R * R, debut = o.voirPropre && o.propre ? (o.propre.n || 0) : 0;
     let touche = false;
-    for (let i = o.traits.length - 1; i >= debut; i--) {
-      const p = o.traits[i].p; let dedans = false;
-      for (let j = 0; j < p.length; j += 3) { const dx = p[j] - x, dy = p[j + 1] - y; if (dx * dx + dy * dy < R2) { dedans = true; break; } }
-      if (!dedans) continue;
-      if (o.propre && i < (o.propre.n || 0)) oublierPropre();
-      trait.retires.push({ i, trait: o.traits[i] }); o.traits.splice(i, 1); touche = true;
+    // d'abord l'encre ; le surlignage ne part que si la gomme ne touche aucune écriture à cet endroit (gommer une note posée sur du surligné le laisse)
+    for (const sur of [false, true]) {
+      if (sur && touche) break;
+      for (let i = o.traits.length - 1; i >= debut; i--) {
+        const tt = o.traits[i], p = tt.p; let dedans = false;
+        if (!!tt.s !== sur) continue;
+        if (sur) dedans = T.toucheSur(tt, x, y, R * 0.5);
+        else for (let j = 0; j < p.length; j += 3) { const dx = p[j] - x, dy = p[j + 1] - y; if (dx * dx + dy * dy < R2) { dedans = true; break; } }
+        if (!dedans) continue;
+        if (o.propre && i < (o.propre.n || 0)) oublierPropre();
+        trait.retires.push({ i, trait: o.traits[i] }); o.traits.splice(i, 1); touche = true;
+      }
     }
     if (touche) demanderRedessin();
   }
@@ -226,7 +278,13 @@
     } else if (nom === "doigt") { etat.doigtEcrit = !etat.doigtEcrit; majOutils(); C.dire(etat.doigtEcrit ? "Le doigt écrit." : "Le doigt déplace la feuille."); }
     else if (nom === "propre") return auPropre();
   };
-  F.outil = function (nom) { etat.outil = nom; majOutils(); };
+  // choisir le surligneur alors qu'il est déjà en main : couleur suivante
+  function prendre(nom) {
+    if (nom === "surligneur" && etat.outil === "surligneur") choisirSur(T.SURLIGNEURS[(T.SURLIGNEURS.indexOf(etat.surCouleur) + 1) % T.SURLIGNEURS.length]);
+    etat.outil = nom;
+  }
+  function choisirSur(c) { etat.surCouleur = c; try { localStorage.setItem("cartable-surligneur", c); } catch (e) { /* tant pis */ } }
+  F.outil = function (nom) { prendre(nom); majOutils(); };
 
   // ---------- mettre au propre ----------
   async function auPropre() {
@@ -274,14 +332,16 @@
   function majOutils() {
     for (const b of outils.querySelectorAll("button")) {
       const d = b.dataset;
-      if (d.outil) b.classList.toggle("actif", d.outil === etat.outil);
+      if (d.outil) { b.classList.toggle("actif", d.outil === etat.outil); if (d.outil === "surligneur") b.style.setProperty("--sur", etat.surCouleur); }
       else if (d.couleur) b.classList.toggle("actif", d.couleur === etat.couleur);
+      else if (d.surcouleur) b.classList.toggle("actif", d.surcouleur === etat.surCouleur);
       else if (d.taille) b.classList.toggle("actif", +d.taille === etat.taille);
       else if (d.action === "annuler") b.disabled = !pile.length;
       else if (d.action === "refaire") b.disabled = !refaits.length;
       else if (d.action === "doigt") b.classList.toggle("actif", etat.doigtEcrit);
       else if (d.action === "propre") { b.classList.toggle("actif", !!(o && o.voirPropre)); b.querySelector("span").textContent = o && o.voirPropre ? (o.image ? "Original" : "Mon écriture") : "Au propre"; }
     }
+    outils.classList.toggle("sur", etat.outil === "surligneur");   // surligneur en main : ses couleurs remplacent celles de l'encre
     const pr = !!(o && o.voirPropre && o.propre);            // la pastille : le côté allumé est celui qu'on voit
     bascule.classList.toggle("propre", pr);
     for (const b of bascule.querySelectorAll("button")) b.setAttribute("aria-pressed", String((b.dataset.voir === "propre") === pr));
@@ -292,11 +352,13 @@
     if ((b.dataset.voir === "propre") !== !!(o.voirPropre && o.propre)) F.action("propre");
   });
   for (const b of outils.querySelectorAll("[data-couleur] i")) b.style.background = b.parentNode.dataset.couleur;
+  for (const b of outils.querySelectorAll("[data-surcouleur] i")) b.style.background = b.parentNode.dataset.surcouleur;
   outils.addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b || !ouvert) return;
     const d = b.dataset;
-    if (d.outil) etat.outil = d.outil;
+    if (d.outil) prendre(d.outil);
     else if (d.couleur) { etat.couleur = d.couleur; etat.outil = "stylo"; }
+    else if (d.surcouleur) { choisirSur(d.surcouleur); etat.outil = "surligneur"; }
     else if (d.taille) etat.taille = +d.taille;
     else if (d.action) return F.action(d.action);
     majOutils();
@@ -321,7 +383,7 @@
       return;
     }
     const [x, y] = versPage(p.x, p.y), dedans = x > -10 && y > -10 && x < ol + 10 && y < oh + 10;
-    const ecrit = type === "pen" || (type === "mouse" && e.button === 0) || (type === "touch" && etat.doigtEcrit && doigts.length === 1);
+    const ecrit = type === "pen" || (type === "mouse" && (e.button === 0 || e.button === 2)) || (type === "touch" && etat.doigtEcrit && doigts.length === 1);   // clic droit = surligner
     if (ecrit && dedans && !trait && !occupe) { p.k = "trait"; debutTrait(p, e); }
   });
   addEventListener("pointermove", (e) => {

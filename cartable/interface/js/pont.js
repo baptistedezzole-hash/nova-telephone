@@ -44,7 +44,10 @@
   //   musique : { musique:{ portees, symboles }, garder:[indices des traits non reconnus, dessinés tels quels] }
   //   texte   : { belle:[{texte,x,yBase,taille,police,largeurMax}], texteBrut }  (reconnaissance de B)
   P.reconnaitre = async function (page) {
-    const n = (page.traits || []).length;
+    const tous = page.traits || [], n = tous.length;
+    // le surlignage n'est pas de l'écriture : on reconnaît l'encre seule, et il reste dessiné tel quel
+    const ind = []; tous.forEach((t, i) => { if (!t.s) ind.push(i); });
+    if (ind.length !== n) page = Object.assign({}, page, { traits: ind.map((i) => tous[i]) });
     let r = null;
     if (vrai.reconnaitre) r = await vrai.reconnaitre(page);
     if (!r) {
@@ -54,6 +57,7 @@
       const reste = 420 - (performance.now() - t0); if (reste > 0) await U.attendre(reste);   // le petit temps de « magie » reste le même
     }
     r.n = n;
+    if (ind.length !== n && Array.isArray(r.garder)) r.garder = r.garder.map((i) => ind[i]).filter((i) => i !== undefined);   // indices de la vraie page
     if (r.calque && !r.calqueImg) { const e = T.image(r.calque); await e.promesse; r.calqueImg = e.img; }
     return r;
   };

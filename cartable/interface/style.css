@@ -117,6 +117,12 @@ body.porte #corbeille { transform: translate(-50%, 0); opacity: 1; }
 #ecriture .encre-c[data-couleur="#1c3fa8"] i { background: #1c3fa8; }
 #ecriture .encre-c[data-couleur="#b8242c"] i { background: #b8242c; }
 #ecriture .encre-c[data-couleur="#1f7a47"] i { background: #1f7a47; }
+/* le surligneur : ses couleurs prennent la place de celles de l'encre quand il est en main */
+#ecriture .outils .sur-c { display: none; }
+#ecriture .outils.sur .sur-c { display: grid; }
+#ecriture .outils.sur .encre-c { display: none; }
+#ecriture .sur-c i { width: 26px; height: 15px; border-radius: 4px; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.45), 0 1px 2px rgba(0, 0, 0, 0.5); }
+#ecriture .outils .sur-trait { stroke: var(--sur, #fff27a); stroke-width: 3.2; }
 #ecriture .taille i { width: var(--t); height: var(--t); border-radius: 50%; background: currentColor; }
 #ecriture .outils button.large { height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 54px; color: #ffe2a8;
   background: linear-gradient(rgba(240, 182, 90, 0.28), rgba(240, 150, 60, 0.18)); box-shadow: inset 0 0 0 1px rgba(240, 182, 90, 0.5); }
