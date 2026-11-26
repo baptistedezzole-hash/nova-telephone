@@ -30,7 +30,7 @@
       const n = P.donnees().objets.filter((x) => x.type === "classeur").length;
       return { id: U.id("k"), type: "classeur", nom: "Classeur", couleur: COULEURS[n % COULEURS.length], pages: [], r, x: 0, y: 0 };
     }
-    return { id: U.id("f"), type: "feuille", papier: papier || "blanc", traits: [], v: 1, r, x: 0, y: 0 };
+    return { id: U.id("f"), type: "feuille", papier: papier || "blanc", traits: [], v: 1, r, x: 0, y: 0, cree: Date.now() };
   }
   function centreBloc(quoi, papier) {
     const b = elTiroir.querySelector(quoi === "feuille" ? `[data-papier="${papier}"]` : `[data-creer="${quoi}"]`);
@@ -48,7 +48,7 @@
       try { ph = await P.scanner(); } catch (e) { console.error(e); }
       photoEnCours = false;
       if (!ph || !ph.image) { if (ph !== null) C.dire("Pas de photo."); return null; }
-      const o = { id: U.id("p"), type: "photo", image: ph.image, l: ph.l || 840, h: ph.h || 1188, traits: [], v: 1, r: (Math.random() - 0.5) * 10 };
+      const o = { id: U.id("p"), type: "photo", image: ph.image, l: ph.l || 840, h: ph.h || 1188, traits: [], v: 1, r: (Math.random() - 0.5) * 10, cree: Date.now() };
       if (ph.sha) o.sha = ph.sha;
       await T.imagePrete(o);
       const pl = B.placeLibre(); o.x = pl.x; o.y = pl.y;
