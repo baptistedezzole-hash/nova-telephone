@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="85bbbf57a5bdd56d">
+<meta name="nova-version" content="82eb6b7bd802e775">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -615,7 +615,7 @@ a.lien .lienFl { flex: none; font-size: 22px; line-height: 1; color: var(--or); 
   const placer = () => {
     const sc = document.getElementById("scene"), h = document.querySelector("header");
     let t = 0;
-    if (sc && sc.offsetParent !== null) t = sc.getBoundingClientRect().top + 58;
+    if (sc && sc.offsetParent !== null) t = sc.getBoundingClientRect().top + 66;   // sous « N agents en cours » (scène + 46 px)
     if (h) t = Math.max(t, h.getBoundingClientRect().bottom + 6);
     if (t > 0) P.style.top = Math.round(t) + "px";
     document.documentElement.style.setProperty("--pileBas", Math.round(P.getBoundingClientRect().bottom + 6) + "px");
