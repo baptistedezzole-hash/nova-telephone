@@ -26,6 +26,7 @@
     video: '<circle cx="12" cy="12" r="3.2"/><path d="M4 8.5A2 2 0 0 1 6 6.5h2l1.5-2h5l1.5 2h2a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/>',
     montre: '<path d="M12 4v4M12 16v4M4 12h4M16 12h4M7 7l2 2M15 15l2 2M17 7l-2 2M9 15l-2 2"/>',
     labo: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l5.5-5.5"/><circle cx="15.5" cy="15" r="1.1" fill="currentColor"/><circle cx="8" cy="9.5" r="1" fill="currentColor"/>',
+    trading: '<path d="M4 19h16"/><path d="M6 16l4-5 3 3 5-7"/><path d="M15 7h3v3"/>',
     grille: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8"/>',
   };
   // Applis gardées DANS l'appli (GitHub Pages + service worker) : marchent sans réseau.
@@ -45,6 +46,7 @@
     "daisy-apc": { titre: "Plan Daisy APC", court: "Daisy APC", ic: "daisy", teinte: "#5cff9d" },
     "expose": { titre: "Dernier exposé", court: "Exposé", ic: "expose", teinte: "#a9c8ff" },
     "tickets": { titre: "Notes de frais", court: "Notes de frais", ic: "tickets", teinte: "#ffb03a" },
+    "trading": { titre: "Nova Trading", court: "Trading", ic: "trading", teinte: "#f5b13d" },   // 27/11 lecture seule, argent fictif
   };
   const RACCOURCIS = [
     { cle: "avoir", titre: "À voir", ic: "avoir", teinte: "#e9d6a8", ok: () => !!(window.NovaAVoir && NovaAVoir.ouvrirListe), go: () => NovaAVoir.ouvrirListe() },
