@@ -83,6 +83,10 @@
         if (ph.propre !== o.propre) ph.v = (ph.v || 0) + 1;                            // les images gardées (classeur) se refont
         if (o.propre !== undefined) ph.propre = o.propre; else delete ph.propre;      // photo mise au propre (scan net ou redessinée) : l'image d'origine reste
         ph.voirPropre = !!o.ext_voirPropre;
+        // 27/11 chanson à plusieurs vues (paroles · piano + chant · chant · piano · écouter) : les sha des versions, lus par Cartable.versions
+        const vs = o.ext_versions && typeof o.ext_versions === "object" ? o.ext_versions : null;
+        if (JSON.stringify(ph.versions || null) !== JSON.stringify(vs)) ph.v = (ph.v || 0) + 1;
+        if (vs) ph.versions = vs; else delete ph.versions;
         return ph;
       }
       const f = Object.assign(x, base, commun, { type: "feuille", papier: VERS_UI[o.papier] || "blanc", titre: o.titre || "" });

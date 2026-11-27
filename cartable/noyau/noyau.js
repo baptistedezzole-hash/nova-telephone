@@ -1049,6 +1049,43 @@
           r.dit = "« " + (cmd.titre || "Photo") + " » ajoutée" + (cmd.dans ? " dans « " + cmd.dans + " »" + (r.classeurCree ? " (classeur créé)" : "") : "") + (pr ? ", mise au propre, original gardé." : ".");
           break;
         }
+        case "versions": {                                    // 27/11 une chanson à plusieurs vues : paroles · piano + chant · chant · piano · écouter
+          // la feuille de paroles garde sa place, ses annotations et son surlignage ; les versions s'ajoutent (ou se mettent à jour) dessus
+          const nom = String(cmd.quoi || cmd.titre || "").trim();
+          if (!nom) throw new Error("quelle chanson ?");
+          let o = parId(cmd.quoi) || c.trouver(nom, { type: "feuille" });
+          if (o && (o.supprime || o.papier !== "photo" || plat(o.titre) !== plat(nom))) o = null;
+          if (!o) {
+            if (!cmd.octets || !cmd.octets.length) throw new Error("feuille « " + nom + " » introuvable (il faut l'image des paroles)");
+            const nomK = cmd.dans || "Chant";
+            const k = c.trouver(nomK, { type: "classeur" });
+            const dans = k && plat(k.titre) === plat(nomK) ? k.id : c.creerClasseur({ titre: nomK, pos: placeLibre() });
+            r.id = await c.ajouterImage(cmd.octets, { mime: cmd.mime, l: cmd.l, h: cmd.h, titre: cmd.titre || nom, dans });
+            o = c.obtenir(r.id); r.creee = true;
+          } else if (cmd.octets && cmd.octets.length) {      // paroles refaites : l'image change sur place, traits gardés
+            const mime = cmd.mime || "image/png", l = cmd.l || 1000, h = cmd.h || 1414;
+            const sha = await c.ajouterBlob(cmd.octets, mime);
+            if (!(o.image && o.image.sha === sha)) c.modifier(o.id, { image: { sha, l, h, mime }, format: { l: 210, h: Math.round(210 * h / l) } });
+          }
+          r.id = o.id;
+          const av = o.ext_versions && typeof o.ext_versions === "object" ? o.ext_versions : {};
+          const vs = { v: 1, partitions: Object.assign({}, av.partitions || {}), ecoute: av.ecoute || null, maj: Date.now() };
+          const vo = cmd.versionsOctets || {};
+          for (const k of ["pianochant", "chant", "piano"]) {
+            if (vo[k] && vo[k].length) vs.partitions[k] = { sha: await c.ajouterBlob(vo[k], "image/vnd.cartable.partition") };
+          }
+          if (cmd.ecouteOctets && cmd.ecouteOctets.length) {
+            const d = +cmd.duree;
+            vs.ecoute = { sha: await c.ajouterBlob(cmd.ecouteOctets, "image/vnd.cartable.audio"), type: /^audio\/[a-z0-9.+-]{1,20}$/.test(cmd.ecouteType || "") ? cmd.ecouteType : "audio/mpeg",
+                          duree: isFinite(d) && d > 0 && d < 36000 ? Math.round(d * 10) / 10 : 0 };
+          }
+          if (!vs.ecoute) delete vs.ecoute;
+          c.modifier(o.id, Object.assign({ ext_versions: vs }, cmd.titre && cmd.titre !== o.titre ? { titre: cmd.titre } : {}));
+          const n = Object.keys(vs.partitions).length + (vs.ecoute ? 1 : 0);
+          r.versions = Object.keys(vs.partitions).concat(vs.ecoute ? ["ecoute"] : []);
+          r.dit = "« " + (cmd.titre || o.titre || nom) + " » " + (r.creee ? "ajoutée dans « " + (cmd.dans || "Chant") + " »" : "mise à jour") + " : paroles + " + n + " version" + (n > 1 ? "s" : "") + " à choisir en haut de la feuille.";
+          break;
+        }
         case "partition-jouer": {                             // « joue la section 3 de … » : l'interface ouvre la page et joue (surNova)
           const o = trouverOuErreur(cmd.quoi, "feuille"); r.id = o.id;
           if (!o.propre || !o.propre.partition) throw new Error("cette feuille n'est pas une partition lue");
