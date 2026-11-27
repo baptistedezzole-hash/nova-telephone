@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="1f7d09a8ad722094">
+<meta name="nova-version" content="80e8096c6293756c">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -2634,13 +2634,13 @@ $("saisie").addEventListener("submit", ev => { ev.preventDefault(); deverrouille
 // que lui, ne compte pas) ; (4) garde-fou : envoi au bout de maxParoleMs. Pur calcul (aucun accès à la page) : testé hors navigateur
 // par outils\test_telephone_vad.py (voix seule, voiture, bruit rose, radio). Réglages : ECOUTE_DEFAUT, modifiables (NovaEcoute.regler).
 const ECOUTE_DEFAUT = {
-  finMs: 1150,           // plus rien au-dessus du fond pendant ça = fin de phrase
-  finLongMs: 100,        // + jusqu'à ça pour un long discours (3 % du temps de voix)
-  margeDebut: 9,         // dB au-dessus du fond pour « il parle »
+  finMs: 2800,           // plus rien au-dessus du fond pendant ça = fin de phrase
+  finLongMs: 1500,       // + jusqu'à ça pour un long discours (3 % du temps de voix)
+  margeDebut: 6,         // dB au-dessus du fond pour « il parle »
   debutMs: 180,          // voix nette au moins ça pour démarrer
-  margeFin: 5,           // dB au-dessus du fond pour compter encore comme voix…
-  ratioFin: 0.4,         // … ou cette part de la hauteur de sa voix au-dessus du fond (bruit fort, radio)…
-  margeFinMax: 12,       // … sans dépasser ça (au calme, la fin douce des mots compte encore)
+  margeFin: 3,           // dB au-dessus du fond pour compter encore comme voix…
+  ratioFin: 0.2,         // … ou cette part de la hauteur de sa voix au-dessus du fond (bruit fort, radio)…
+  margeFinMax: 6,        // … sans dépasser ça (au calme, la fin douce des mots compte encore)
   bandeBas: 250, bandeHaut: 3800,   // Hz : la bande de la voix
   fondFenetreMs: 4000, fondCentile: 0.15,
   fondMonteMax: 6,       // pendant qu'il parle, le fond ne peut monter que de ça (+1 dB/s)
