@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="nova-version" content="c14fa5b633fe046b">
+<meta name="nova-version" content="1f7d09a8ad722094">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <!-- COQUILLE (A) : appli plein écran (manifest, icônes, service worker, jeton -> cookie : voir appli.js) -->
 <meta name="theme-color" content="#02030a">
@@ -2625,6 +2625,118 @@ $("saisie").addEventListener("submit", ev => { ev.preventDefault(); deverrouille
   suivre();
 })();
 
+// ==== DETECTEUR-VOIX DEBUT ====
+// 2026-11-27 FIN DE PHRASE DANS LE BRUIT (voiture : moteur, route, radio). Avant : le fond = le MINIMUM du son, et « voix » = 12 dB
+// au-dessus ; dans un bruit qui fluctue, le bruit lui-même passait pour de la voix : l'écoute ne finissait jamais.
+// Maintenant : (1) seule la bande de la voix compte (250-3800 Hz : le grondement du moteur et de la route est ignoré) ;
+// (2) le fond est mesuré EN CONTINU (15e centile des 4 dernières secondes : les petits trous entre les mots retombent sur le bruit) ;
+// (3) la fin de phrase = plus rien au-dessus du fond depuis finMs, le seuil suivant la hauteur de SA voix (la radio, plus faible
+// que lui, ne compte pas) ; (4) garde-fou : envoi au bout de maxParoleMs. Pur calcul (aucun accès à la page) : testé hors navigateur
+// par outils\test_telephone_vad.py (voix seule, voiture, bruit rose, radio). Réglages : ECOUTE_DEFAUT, modifiables (NovaEcoute.regler).
+const ECOUTE_DEFAUT = {
+  finMs: 1150,           // plus rien au-dessus du fond pendant ça = fin de phrase
+  finLongMs: 100,        // + jusqu'à ça pour un long discours (3 % du temps de voix)
+  margeDebut: 9,         // dB au-dessus du fond pour « il parle »
+  debutMs: 180,          // voix nette au moins ça pour démarrer
+  margeFin: 5,           // dB au-dessus du fond pour compter encore comme voix…
+  ratioFin: 0.4,         // … ou cette part de la hauteur de sa voix au-dessus du fond (bruit fort, radio)…
+  margeFinMax: 12,       // … sans dépasser ça (au calme, la fin douce des mots compte encore)
+  bandeBas: 250, bandeHaut: 3800,   // Hz : la bande de la voix
+  fondFenetreMs: 4000, fondCentile: 0.15,
+  fondMonteMax: 6,       // pendant qu'il parle, le fond ne peut monter que de ça (+1 dB/s)
+  voixMinMs: 350,        // moins de voix que ça = simple bruit, rien n'est envoyé
+  maxParoleMs: 45000,    // mains libres : garde-fou, envoi au bout de ça
+  filtresMicro: false,   // echoCancellation + noiseSuppression + autoGainControl (Android : son « appel » étouffé tant que le micro est ouvert)
+  motsFin: true,         // « …, c'est tout » / « …. Envoie. » à la fin = envoi tout de suite, le mot est retiré
+};
+const fftCache = new Map();
+function fftTables(n) {
+  let t = fftCache.get(n); if (t) return t;
+  const rev = new Uint32Array(n), cos = new Float32Array(n / 2), sin = new Float32Array(n / 2), han = new Float32Array(n);
+  const bits = Math.log2(n);
+  for (let i = 0; i < n; i++) { let r = 0; for (let b = 0; b < bits; b++) r = (r << 1) | ((i >> b) & 1); rev[i] = r; han[i] = .5 - .5 * Math.cos(2 * Math.PI * i / (n - 1)); }
+  for (let i = 0; i < n / 2; i++) { cos[i] = Math.cos(2 * Math.PI * i / n); sin[i] = -Math.sin(2 * Math.PI * i / n); }
+  t = { rev, cos, sin, han, re: new Float32Array(n), im: new Float32Array(n) }; fftCache.set(n, t); return t;
+}
+function energieBande(x, sr, bas, haut) {   // dB de la bande [bas, haut] Hz sur la fenêtre x (Hann + FFT radix 2) ; null = silence numérique
+  let n = 1; while (n * 2 <= x.length && n < 4096) n *= 2;
+  if (n < 256) return null;
+  const T = fftTables(n), re = T.re, im = T.im, o = x.length - n;
+  let brut = 0;
+  for (let i = 0; i < n; i++) { const v = x[o + i]; brut += v * v; re[T.rev[i]] = v * T.han[i]; im[T.rev[i]] = 0; }
+  if (brut / n < 1e-11) return null;   // micro coupé (piste désactivée) : que des zéros
+  for (let l = 2; l <= n; l *= 2) {
+    const h = l / 2, pas = n / l;
+    for (let i = 0; i < n; i += l) for (let j = 0; j < h; j++) {
+      const c = T.cos[j * pas], s = T.sin[j * pas], a = i + j, b = a + h;
+      const tr = re[b] * c - im[b] * s, ti = re[b] * s + im[b] * c;
+      re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+    }
+  }
+  const k0 = Math.max(1, Math.floor(bas * n / sr)), k1 = Math.min(n / 2 - 1, Math.ceil(haut * n / sr));
+  let p = 0; for (let k = k0; k <= k1; k++) p += re[k] * re[k] + im[k] * im[k];
+  return 10 * Math.log10(p / (n * n) + 1e-14);
+}
+function creerDetecteurVoix(reglages, fondConnu) {
+  const R = Object.assign({}, ECOUTE_DEFAUT, reglages || {});
+  const hist = [];   // { t, e } des dernières secondes
+  let fond = typeof fondConnu === "number" && isFinite(fondConnu) ? fondConnu : null, t0 = null, pPrec = null;
+  let parle = false, fortDepuis = 0, fortMs = 0, dernierFort = 0, dernierVoix = 0, debutParole = 0, fondDebut = 0, voixHaut = -200, voixMs = 0, suiteVoix = 0, dernierT = 0;
+  function centile() {
+    const v = hist.map(h => h.e).sort((a, b) => a - b);
+    return v[Math.min(v.length - 1, Math.floor(v.length * R.fondCentile))];
+  }
+  function trame(x, sr, now) {
+    const brut = energieBande(x, sr, R.bandeBas, R.bandeHaut);
+    const dt = dernierT ? Math.min(200, now - dernierT) : 60; dernierT = now;
+    if (brut === null) return { e: null, fond, parle, fin: false, niveau: 0, voixMs };
+    if (t0 === null) t0 = now;
+    const p = Math.pow(10, brut / 10), e = 10 * Math.log10((pPrec === null ? p : (p + pPrec) / 2) + 1e-14); pPrec = p;   // lissé sur 2 trames
+    hist.push({ t: now, e }); while (hist.length && now - hist[0].t > R.fondFenetreMs) hist.shift();
+    const appris = now - t0 >= 300;
+    if (appris || fond === null) {
+      let f = centile();
+      if (parle) f = Math.min(f, fondDebut + R.fondMonteMax + (now - debutParole) / 1000);
+      fond = fond === null || appris ? f : Math.min(fond, f);
+    }
+    if (!appris && fondConnu == null) return { e, fond, parle, fin: false, niveau: 0, voixMs };   // première écoute : on apprend le bruit
+    const snr = e - fond, niveau = Math.max(0, Math.min(1, snr / 30));
+    if (!parle) {
+      if (snr > R.margeDebut) { if (now - dernierFort > 300) { fortDepuis = now; fortMs = 0; } dernierFort = now; fortMs += dt;
+        if (fortMs >= R.debutMs) { parle = true; debutParole = fortDepuis; fondDebut = fond; voixHaut = e; dernierVoix = now; voixMs = fortMs; suiteVoix = 2; } }
+      return { e, fond, parle, fin: false, niveau, voixMs };
+    }
+    if (e > voixHaut) voixHaut = voixHaut + (e - voixHaut) * .5; else voixHaut -= .04 * dt / 60;
+    const seuil = fond + Math.max(R.margeFin, Math.min(R.margeFinMax, R.ratioFin * (voixHaut - fond)));
+    if (e > seuil) { suiteVoix++; if (suiteVoix >= 2 || snr > R.margeDebut + 3) { dernierVoix = now; voixMs += dt; } } else suiteVoix = 0;
+    const attente = R.finMs + Math.min(R.finLongMs, voixMs * .03);
+    let fin = false, raison = "";
+    if (now - dernierVoix > attente) { fin = true; raison = "silence"; }
+    else if (R.maxParoleMs && now - debutParole > R.maxParoleMs) { fin = true; raison = "max"; }
+    const res = { e, fond, parle: true, fin, raison, niveau, voixMs, seuil, debut: debutParole, derniereVoix: dernierVoix };
+    if (fin) { parle = false; fortMs = 0; dernierFort = 0; }
+    return res;
+  }
+  return { trame, get fond() { return fond; }, get parle() { return parle; }, reglages: R };
+}
+// « …, c'est tout » / « … Envoie. » à la fin : envoi tout de suite, et le mot est retiré (jamais s'il ne reste rien)
+function motFinal(t) {
+  const s = String(t || "");
+  const m = s.match(/(^|[\s,.;:!?…-])(c'?est tout|j'ai fini|fin du message)\s*[.!?…]*\s*$/i) || s.match(/(^|[,.;:!?…]\s*|\bnova[\s,]+)(envoie[sz]?(?:[\s-]+le)?|envoyer|terminé)\s*[.!?…]*\s*$/i);
+  if (!m) return { texte: s, force: false };
+  const reste = s.slice(0, m.index + m[1].length).replace(/[\s,;:-]+$/, "").replace(/\bnova$/i, "").trim();
+  return reste.length >= 2 ? { texte: reste, force: true } : { texte: s, force: false };
+}
+// ==== DETECTEUR-VOIX FIN ====
+
+let R_ECOUTE = (() => { try { return Object.assign({}, ECOUTE_DEFAUT, JSON.parse(lire("nova-ecoute", "{}")) || {}); } catch (x) { return Object.assign({}, ECOUTE_DEFAUT); } })();
+let dernierFond = null, dernierFondT = 0;   // le bruit de la voiture, gardé d'une écoute à l'autre (réécoute tout de suite après la réponse)
+// Réglages à chaud (console ou Nova) : NovaEcoute.regler({ finMs: 1200 }) · NovaEcoute.regler(null) = valeurs d'origine · NovaEcoute.reglages()
+window.NovaEcoute = {
+  regler(o) { const perso = o ? Object.assign(JSON.parse(lire("nova-ecoute", "{}") || "{}"), o) : {}; garder("nova-ecoute", JSON.stringify(perso)); R_ECOUTE = Object.assign({}, ECOUTE_DEFAUT, perso); return R_ECOUTE; },
+  reglages() { return Object.assign({}, R_ECOUTE); }, defaut: ECOUTE_DEFAUT, fond: () => dernierFond,
+};
+
 // =====================================================================================================
 // ÉCOUTER : reconnaissance du téléphone, ou audio transcrit par le PC (en talkie : jusqu'à ce qu'on lâche)
 // =====================================================================================================
@@ -2692,7 +2804,8 @@ function ecouterTelephone(id) {
   const minut = setInterval(() => {
     niveauMicro *= .85;
     if (ptt) return;   // talkie : c'est le doigt qui décide
-    if (texte && Date.now() - dernier > SILENCE) finir(true);
+    if (texte && R_ECOUTE.motsFin && Date.now() - dernier > 350 && motFinal(texte).force) finir(true);   // 2026-11-27 « …, c'est tout » / « … Envoie. »
+    else if (texte && Date.now() - dernier > SILENCE) finir(true);
     else if (!texte && Date.now() - debut > PATIENCE) finir(false);
   }, 200);
   lancer();
@@ -2759,13 +2872,14 @@ const micOuvert = () => !!(micFlux && micFlux.getAudioTracks().some(t => t.ready
 // (MODE_IN_COMMUNICATION) tant que le micro est ouvert : voix de Nova, vidéos et morceaux sortaient étouffés. Micro BRUT = son média normal.
 // L'anti-écho ne dépend pas de ça : la piste est coupée pendant que Nova parle (micActif) + 0,95 s avant de réécouter ; une page
 // « montrer » ouverte exige le mot « Nova » en mains libres (envoyerVoix). Le mode vidéo Gemini garde son propre anti-écho (video.js).
-const MIC_OPTIONS = { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } };
+// 2026-11-27 : réglage filtresMicro (NovaEcoute.regler({ filtresMicro: true })) = anti-bruit du téléphone, au prix du son « appel » ; non par défaut.
+const micOptions = () => { const f = !!(typeof R_ECOUTE === "object" && R_ECOUTE.filtresMicro); return { audio: { echoCancellation: f, noiseSuppression: f, autoGainControl: f } }; };
 function noterErreurMicro(x, etape) { micErreur = (x && x.name) || "Error"; micDetail = (x && x.message) || String(x || ""); micEtape = etape; try { console.warn("[Nova micro]", etape, micErreur, micDetail); } catch (y) {} }
 async function brancherMicro(f) {   // le flux est là : l'analyseur pour la détection de voix (une erreur ici n'est PAS un refus du micro)
   fermerMicro();
   micFlux = f;
   try {
-    micCtx = new (window.AudioContext || window.webkitAudioContext)(); micAn = micCtx.createAnalyser(); micAn.fftSize = 1024;
+    micCtx = new (window.AudioContext || window.webkitAudioContext)(); micAn = micCtx.createAnalyser(); micAn.fftSize = 2048;   // 2048 : assez fin pour isoler la bande de la voix (détecteur de fin)
     micCtx.createMediaStreamSource(f).connect(micAn);
     try { await micCtx.resume(); } catch (x) {}
   } catch (x) { noterErreurMicro(x, "analyse du son"); fermerMicro(); return null; }
@@ -2781,7 +2895,7 @@ function ouvrirMicro() {
   let p;
   try {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw Object.assign(new Error(window.isSecureContext ? "navigator.mediaDevices absent" : "page pas en https"), { name: "PasDeMediaDevices" });
-    p = navigator.mediaDevices.getUserMedia(MIC_OPTIONS);   // synchrone, dans le geste
+    p = navigator.mediaDevices.getUserMedia(micOptions());   // synchrone, dans le geste
   } catch (x) { noterErreurMicro(x, "appel"); return Promise.resolve(null); }
   micOuvre = p.catch(x => {
     noterErreurMicro(x, "getUserMedia");
@@ -2808,6 +2922,7 @@ setInterval(() => {
 const BRUIT_VOIX = /^(merci|merci beaucoup|merci d'avoir regardé|au revoir|à bientôt|ok|oui|hum|euh)$/i;
 function envoyerVoix(brut, manuel) {   // mot de réveil « Nova » + filtre des hallucinations de Whisper sur du bruit
   let t = (brut || "").trim();
+  if (R_ECOUTE.motsFin) t = motFinal(t).texte;   // 2026-11-27 : « …, c'est tout » / « … Envoie. » à la fin n'est pas envoyé avec le message
   if (!t) { local = ""; maj(); return; }
   const rejeter = () => { local = ""; toi(""); maj(); if (mainsLibres) { reecouter = true; setTimeout(suite, 250); } };
   if (!manuel && mainsLibres) {
@@ -2850,8 +2965,9 @@ async function ecouterPC(id, utt = null, calme = false) {
   const types = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm", "audio/ogg;codecs=opus"];
   const type = types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || "";
   const rec = new MediaRecorder(flux, type ? { mimeType: type } : undefined), bouts = [];
-  const an = micAn, buf = new Float32Array(an.fftSize);
-  let fond = -60, parle = !!utt, fortTotal = utt ? 9999 : 0, relance = false, fortDepuis = 0, dernierFort = utt ? Date.now() : 0, debut = Date.now(), annule = false, rotation = false, garde = false, forcer = false, dureeFin = 0;
+  const an = micAn, buf = new Float32Array(an.fftSize), sr = (micCtx && micCtx.sampleRate) || 48000;
+  const det = creerDetecteurVoix(R_ECOUTE, Date.now() - dernierFondT < 120000 ? dernierFond : null);   // 2026-11-27 détecteur de fin dans le bruit (DETECTEUR-VOIX)
+  let parle = !!utt, fortTotal = utt ? 9999 : 0, relance = false, fortDepuis = 0, dernierFort = utt ? Date.now() : 0, debut = Date.now(), annule = false, rotation = false, garde = false, forcer = false, dureeFin = 0;
   const fermer = () => { clearInterval(minut); niveauMicro = 0; if (!rotation) chronoFin(); };
   if (!utt && (manuel || !mainsLibres)) chronoDebut(); else if (utt) chronoFin(true);   // mains libres : « j'enregistre » seulement quand il parle (plus de clignotement toutes les 20 s)   // le micro, lui, reste ouvert en mains libres
   enreg = { actif: () => forcer || manuel || parle || !!utt || Date.now() - dernierFort < 800,
@@ -2879,7 +2995,7 @@ async function ecouterPC(id, utt = null, calme = false) {
     if (!mainsLibres) fermerMicro();
     if (relance && !forcer) { enreg = null; ecouteFinir = null; if (id === ecouteId) ecouterPC(id, null, true); return; }   // rien dit depuis 20 s : on repart en silence, sans toucher à l'affichage
     if (forcer && !utt && (!bouts.length || dureeFin < 300)) { local = ""; toi(""); toast("Je n'ai rien entendu."); maj(); if (mainsLibres) { reecouter = true; setTimeout(suite, 250); } return; }   // touché avant d'avoir pu parler
-    if (!forcer && (!parle || (!manuel && !utt && fortTotal < 500))) { local = ""; toi(""); maj(); if (mainsLibres) { reecouter = true; setTimeout(suite, 250); } return; }   // rien dit ou simple bruit bref : rien n'est envoyé
+    if (!forcer && (!parle || (!manuel && !utt && fortTotal < R_ECOUTE.voixMinMs))) { local = ""; toi(""); maj(); if (mainsLibres) { reecouter = true; setTimeout(suite, 250); } return; }   // rien dit ou simple bruit bref : rien n'est envoyé
     local = "envoi"; toi("…"); maj();
     const blob = new Blob(bouts, { type: rec.mimeType || type || "audio/webm" });
     if (utt) { if (bouts.length) utt.blobs.push({ blob, texte: null }); utt.fini = true; utt.manuel = manuel || forcer; await Sortie.sauver(utt); }
@@ -2894,18 +3010,20 @@ async function ecouterPC(id, utt = null, calme = false) {
     try { rec.stop(); } catch (x) {}
   };
   const minut = setInterval(() => {
-    an.getFloatTimeDomainData(buf); let s = 0; for (const v of buf) s += v * v;
-    const db = 10 * Math.log10(s / buf.length + 1e-10), now = Date.now();
-    if (now - debut < 400) { fond = now - debut < 80 ? db : Math.min(fond, db); return; }
-    fond = Math.min(db, fond + .02);   // le fond remonte doucement s'il était trop bas
-    niveauMicro = Math.max(0, Math.min(1, (db - fond) / 30));
-    if (db > fond + 12) { if (now - dernierFort > 300) fortDepuis = now; dernierFort = now; fortTotal += 60; if (now - fortDepuis > 250 && !parle) { parle = true; if (!manuel && mainsLibres && !chronoT) chronoDebut(); } }
+    an.getFloatTimeDomainData(buf); const now = Date.now();
+    const r = det.trame(buf, sr, now);
+    if (typeof r.fond === "number" && r.e !== null) { dernierFond = r.fond; dernierFondT = now; }
+    niveauMicro = r.niveau;
+    if (r.parle) { dernierFort = r.derniereVoix || now; fortTotal = Math.max(fortTotal, r.voixMs); if (!parle) { parle = true; fortDepuis = r.debut || now; if (!manuel && mainsLibres && !chronoT) chronoDebut(); } }
+    else if (r.niveau > .3) dernierFort = now;
     if (rotation) return;
     const long = (now - debut > 60000 && now - dernierFort > 450) || now - debut > 100000;   // pause naturelle après 60 s, sinon coupe à 100 s
     if (ptt || manuel) { if (long) tourner(); return; }   // 2026-11-07 : il décide seul de la fin (2e toucher / relâché) ; jamais d'arrêt aux pauses
-    if (parle && now - dernierFort > Math.min(6000, SILENCE_PC + fortTotal * .25)) { fermer(); rec.stop(); }   // 2026-11-23 : plus il parle longtemps, plus il a le droit de réfléchir (2,2 s pour une phrase courte, jusqu'à 6 s)
-    else if (!parle && now - debut > PATIENCE) { if (mainsLibres && !manuel) relance = true; fermer(); rec.stop(); }
-    else if (long) tourner();
+    // 2026-11-27 mains libres : fin de phrase = détecteur (bande de la voix, fond suivi en continu : marche moteur et radio allumés) ;
+    // garde-fou maxParoleMs = envoi (plus de coupe en morceaux en mains libres). Avant : « 12 dB au-dessus du minimum », jamais fini dans le bruit.
+    if (r.fin && (parle || utt)) { fortTotal = Math.max(fortTotal, r.voixMs); fermer(); rec.stop(); }
+    else if (utt && !det.parle && now - dernierFort > R_ECOUTE.finMs + 300) { fermer(); rec.stop(); }   // suite d'un long discours : plus rien depuis la coupe
+    else if (!parle && !utt && now - debut > PATIENCE) { if (mainsLibres && !manuel) relance = true; fermer(); rec.stop(); }
   }, 60);
   if (finirDesPret) { finirDesPret = false; setTimeout(() => { if (id === ecouteId && ecouteFinir) ecouteFinir(true); }, utt ? 150 : 0); }   // touché pendant l'ouverture du micro ou la coupe
 }
