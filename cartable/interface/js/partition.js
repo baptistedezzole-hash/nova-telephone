@@ -181,11 +181,12 @@
     const L = Math.max(280, feuilleP.clientWidth - 24);                               // largeur utile en pixels
     const pageWidth = Math.round(U.borne(L * 3.1, 1100, 2900));
     tk.setOptions({ pageWidth, pageHeight: 60000, scale: echelle, adjustPageHeight: true, svgViewBox: true, breaks: (page && page.propre && page.propre.partition && page.propre.partition.mode === "exercices") ? "encoded" : "auto", header: "auto", footer: "none",
-      pageMarginLeft: 40, pageMarginRight: 40, pageMarginTop: modeExercices() ? 110 : 60, spacingSystem: modeExercices() ? 22 : 12, pageMarginBottom: 50, svgRemoveXlink: true, mnumInterval: 1, justifyVertically: false });
+      pageMarginLeft: 40, pageMarginRight: 40, pageMarginTop: modeExercices() ? 110 : 60, spacingSystem: modeExercices() ? 22 : 12, pageMarginBottom: 50, svgRemoveXlink: true, svgFontFaceInclude: true, mnumInterval: 1, justifyVertically: false });
     try { tk.loadData(xml); } catch (e) { rendu.innerHTML = '<div class="attente erreur"><span>Cette partition est illisible.</span></div>'; return; }
     let svg = "";
     const n = Math.max(1, tk.getPageCount());
-    for (let i = 1; i <= n; i++) svg += tk.renderToSVG(i);
+    // la police musicale (dièses des accords, note du tempo) une seule fois : sinon ces signes sortent en carrés vides
+    for (let i = 1; i <= n; i++) { const p = tk.renderToSVG(i); svg += i === 1 ? p : p.replace(/@font-face\s*\{[^}]*\}/g, ""); }
     rendu.innerHTML = svg;
     rendu.classList.remove("attente");
     cur = U.el("div", "curseur", rendu); cur.hidden = true;

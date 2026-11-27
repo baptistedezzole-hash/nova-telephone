@@ -455,7 +455,7 @@ body.etroit .msg { font-size: 13.5px; }
   #versions .long { display: none; } #versions .court { display: inline; }
   #versions .lecteur { min-width: 0; width: calc(100vw - 32px); max-width: 420px; }
 }
-@media (max-width: 460px) {
+@media (max-width: 640px) {   /* étroit : icônes, seul le choix garde son nom (les boutons de la partition restent libres) */
   #versions .pastille button { padding: 0 9px; } #versions .pastille button span { display: none; }
-  #versions .pastille button[aria-pressed="true"] span { display: inline; }
+  #versions .pastille button[aria-pressed="true"] span.court { display: inline; }
 }
