@@ -46,8 +46,8 @@
       '<span class="pos"></span></div>';
     feuilleP = el.querySelector(".feuille-p"); rendu = el.querySelector(".rendu"); zoneOriginal = el.querySelector(".original"); imgOriginal = zoneOriginal.querySelector("img");
     barre = el.querySelector(".bascule"); transport = el.querySelector(".transport");
-    el.querySelector(".fermer").addEventListener("click", () => P.fermer());
-    el.querySelector(".voile").addEventListener("click", () => P.fermer());
+    el.querySelector(".fermer").addEventListener("click", () => P.fermer("bouton"));
+    el.querySelector(".voile").addEventListener("click", () => P.fermer("voile"));
     barre.addEventListener("click", (e) => { const b = e.target.closest("button[data-voir]"); if (b) voir(b.dataset.voir); });
     el.querySelector(".actions").addEventListener("click", (e) => { const b = e.target.closest("button[data-a]"); if (b) action(b.dataset.a); });
     transport.addEventListener("click", (e) => { const b = e.target.closest("button[data-t]"); if (b) commande(b.dataset.t); });
@@ -56,7 +56,7 @@
       if (!ouvert) return;
       if (e.key === "Escape") { e.preventDefault(); P.fermer(); }
       else if (e.key === " ") { e.preventDefault(); commande("lire"); }
-      else if (e.key === "p" || e.key === "P") voir(mode === "original" ? "partition" : "original");
+      else if ((e.key === "p" || e.key === "P") && !(opt && opt.versions)) voir(mode === "original" ? "partition" : "original");
     });
     addEventListener("resize", () => { if (ouvert && mode === "partition") planifierMiseEnPage(); });
   }
@@ -84,7 +84,7 @@
   // ------------------------------------------------------------ état d'une page ouverte
   let ouvert = false, page = null, opt = null, xml = "", mode = "partition", echelle = 45, eventsNotes = [], timemap = [], mesuresPos = [];
   let nStaves = 0, mainsActives = new Set(), bpmBase = 90, facteur = 1, miseEnPage = 0, idVersIndex = new Map();
-  let aEteOuverte = 0;
+  let aEteOuverte = 0, interpretation = null;
   P.ouvert = () => ouvert;
   P.estPartition = (p) => !!(p && p.propre && p.propre.partition && (p.propre.partition.sha || p.propre.partition.xml));
   P.etat = () => ({ ouvert, mode, notes: eventsNotes.length, mesures: mesuresPos.length, bpm: Math.round(bpmBase * facteur), staves: nStaves, lecture: lecture.etat, echelle });
@@ -106,25 +106,41 @@
     if (!P.estPartition(p)) return false;
     if (ouvert) return true;
     construire();
-    page = p; opt = options || {}; ouvert = true; mode = "partition"; xml = ""; eventsNotes = []; timemap = [];
+    page = p; opt = options || {}; ouvert = true;
+    el.classList.toggle("en-versions", !!opt.versions);                       // chanson à plusieurs versions : la pastille des versions remplace Original / Partition
+    el.hidden = false; el.classList.remove("la");
+    charger(p);
+    void el.offsetWidth; el.classList.add("la");
+    if (S && S.jouer) S.jouer("feuille");
+    return true;
+  };
+  // une autre partition dans la page déjà ouverte (versions d'une chanson : piano + chant, chant, piano), sans la fermer
+  P.changer = function (p, options) {
+    if (!P.estPartition(p)) return false;
+    if (!ouvert) return P.ouvrir(p, null, options);
+    arreterLecture(true);
+    page = p; if (options) opt = options;
+    el.classList.toggle("en-versions", !!opt.versions);
+    charger(p);
+    return true;
+  };
+  function charger(p) {
+    mode = "partition"; xml = ""; eventsNotes = []; timemap = []; interpretation = null;
     const pr = p.propre.partition;
     el.querySelector(".titre").textContent = p.titre || pr.titre || "Partition";
     majSceau(pr);
-    el.hidden = false; el.classList.remove("la"); el.classList.add("charge");
+    el.classList.add("charge");
     rendu.innerHTML = '<div class="attente"><i></i><span>Je prépare la partition…</span></div>';
     voir("partition", true);
     if (typeof p.image === "string" && p.image) imgOriginal.src = p.image; else imgOriginal.removeAttribute("src");
-    void el.offsetWidth; el.classList.add("la");
-    if (S && S.jouer) S.jouer("feuille");
     const id = ++aEteOuverte;
     Promise.all([chargerVerovio(), lireXml(pr)]).then(([t, x]) => {
       if (id !== aEteOuverte || !ouvert) return;
-      if (!x) { rendu.innerHTML = '<div class="attente erreur"><span>La partition n\'est pas encore arrivée sur cet appareil. Réessaie dans un instant.</span></div>'; return; }
-      xml = x; mettreEnPage(true);
-    }).catch((e) => { rendu.innerHTML = '<div class="attente erreur"><span>Je n\'arrive pas à afficher la partition (' + String(e && e.message || e).slice(0, 80) + ").</span></div>"; });
-    return true;
-  };
-  P.fermer = function () {
+      if (!x) { rendu.innerHTML = '<div class="attente erreur"><span>La partition n’est pas encore arrivée sur cet appareil. Réessaie dans un instant.</span></div>'; return; }
+      xml = x; feuilleP.scrollTop = 0; mettreEnPage(true);
+    }).catch((e) => { rendu.innerHTML = '<div class="attente erreur"><span>Je n’arrive pas à afficher la partition (' + String(e && e.message || e).slice(0, 80) + ").</span></div>"; });
+  }
+  P.fermer = function (raison) {
     if (!ouvert) return;
     arreterLecture(true);
     ouvert = false; aEteOuverte++;
@@ -132,7 +148,7 @@
     const p = page, o = opt;
     setTimeout(() => { if (!ouvert) { el.hidden = true; rendu.innerHTML = ""; } }, 260);
     try { if (o && o.avantRetour) o.avantRetour(p, false); } catch (e) { /* rien */ }
-    try { if (o && o.fini) o.fini(p, false); } catch (e) { console.error(e); }
+    try { if (o && o.fini) o.fini(p, false, raison || ""); } catch (e) { console.error(e); }
   };
 
   function majSceau(pr) {
@@ -210,6 +226,7 @@
     const tp = timemap.find((e) => e.tempo);
     bpmBase = tp && tp.tempo ? Math.round(tp.tempo) : 120;
     if (!(pageTempoDonne(timemap))) { facteur = 90 / bpmBase; }                       // sans indication : noire = 90
+    interpreter();
     majTempo(); majMains(); majPos(0); poserSections();
   }
   const pageTempoDonne = () => /<sound[^>]*tempo=|<metronome/.test(xml);
@@ -240,8 +257,102 @@
     p.textContent = nm ? "mesure " + m + " / " + nm : "";
   }
 
-  // ------------------------------------------------------------ le son : piano à queue (20 échantillons), lookahead
+  // ------------------------------------------------------------ le jeu : une interprétation, pas une machine
+  // Sur le modèle des compos Fable : temps forts appuyés, arc de phrase sur 4 mesures, mélodie au-dessus de
+  // l'accompagnement, accords de la main gauche un peu égrenés, micro-décalages corrélés (jamais au hasard pur),
+  // ritardando en fin de phrase et de morceau, pédale reprise à chaque changement de basse.
+  // Toujours la même pour une partition donnée (hasard à graine) : on peut la réécouter et la mesurer.
+  function hasard(graine) {
+    let a = (graine >>> 0) || 1;
+    return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  }
+  function interpreter() {
+    interpretation = null;
+    const evs = eventsNotes;
+    if (!evs.length) return;
+    let graine = 7; for (const e of evs.slice(0, 96)) graine = (Math.imul(graine, 31) + e.midi * 7 + Math.round(e.t)) >>> 0;
+    const r = hasard(graine), gauss = () => (r() + r() + r() + r() - 2) * 1.73;
+    const noire = 60000 / bpmBase, PH = 4;
+    const mes = mesuresPos.length ? mesuresPos.map((m) => m.t) : [0], nMes = mes.length;
+    let finPiece = 0; for (const e of evs) finPiece = Math.max(finPiece, e.fin);
+    const durMes = (i) => Math.max(1, ((i + 1 < nMes ? mes[i + 1] : finPiece) - mes[i]) || noire * 4);
+    const mesDe = (t) => { let lo = 0, hi = nMes - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (mes[m] <= t + 1) lo = m; else hi = m - 1; } return lo; };
+    // le rubato : temps de la partition -> temps joué, un point par temps
+    const ptsS = [0], ptsJ = [0];
+    let tj = 0;
+    for (let i = 0; i < nMes; i++) {
+      const dm = durMes(i), pas = Math.max(1, Math.round(dm / noire));
+      for (let k = 0; k < pas; k++) {
+        const a = mes[i] + dm * k / pas, b = mes[i] + dm * (k + 1) / pas;
+        const u = ((i % PH) + (k + 0.5) / pas) / PH;                                        // place dans la phrase
+        const fin = i >= nMes - 2 ? ((i - (nMes - 2)) + (k + 0.5) / pas) / 2 : 0;          // les deux dernières mesures
+        const s = 1 + 0.075 * Math.pow(Math.max(0, (u - 0.7) / 0.3), 2) - 0.018 * Math.sin(Math.PI * Math.min(1, u / 0.7)) + 0.2 * fin * fin;
+        tj += (b - a) * s; ptsS.push(b); ptsJ.push(tj);
+      }
+    }
+    const conv = (xs, ys, x) => {
+      if (x <= xs[0]) return ys[0] + (x - xs[0]);
+      const n = xs.length - 1; if (x >= xs[n]) return ys[n] + (x - xs[n]);
+      let lo = 0, hi = n; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (xs[m] <= x) lo = m; else hi = m; }
+      return ys[lo] + (ys[hi] - ys[lo]) * (x - xs[lo]) / ((xs[hi] - xs[lo]) || 1);
+    };
+    const avant = (t) => conv(ptsS, ptsJ, t), arriere = (t) => conv(ptsJ, ptsS, t);
+    // les rôles : portée du haut = mélodie (ou la voix), portée du bas = basse, celles du milieu = accompagnement
+    const haut = 0, bas = nStaves >= 2 ? nStaves - 1 : -1;
+    const groupes = [];                                                                    // notes attaquées ensemble, par portée
+    const ouvertsG = new Map();
+    for (const e of evs) {
+      const g = ouvertsG.get(e.staff);
+      if (g && e.t - g.t < 25) g.notes.push(e); else { const n = { t: e.t, staff: e.staff, notes: [e] }; groupes.push(n); ouvertsG.set(e.staff, n); }
+    }
+    const melo = groupes.filter((g) => g.staff === haut).map((g) => Math.max(...g.notes.map((n) => n.midi)));
+    const moyMelo = melo.length ? melo.reduce((a, b) => a + b, 0) / melo.length : 64;
+    // la pédale : reprise à chaque changement de basse (et au début de chaque mesure où la basse bouge)
+    const changes = [];
+    if (bas >= 0) { let prec = null; for (const g of groupes) if (g.staff === bas) { const b = Math.min(...g.notes.map((n) => n.midi)); if (b !== prec) changes.push(g.t); prec = b; } }
+    const prochainChange = (t) => { for (const c of changes) if (c > t + 20) return c; return finPiece + noire; };
+    // même touche rejouée : on la relève juste avant
+    const suivanteMeme = new Map(), prochaineMeme = new Array(evs.length).fill(Infinity);
+    for (let i = evs.length - 1; i >= 0; i--) { const k = evs[i].midi; if (suivanteMeme.has(k)) prochaineMeme[i] = suivanteMeme.get(k); suivanteMeme.set(k, evs[i].t); }
+    const indexDe = new Map(evs.map((e, i) => [e, i]));
+    let dv = 0, dt = 0;
+    for (const g of groupes) {
+      dv = 0.72 * dv + gauss() * 1.3; dt = 0.78 * dt + gauss() * 0.0035;
+      const m = mesDe(g.t), dm = durMes(m), q = (g.t - mes[m]) / noire, nb = Math.round(dm / noire);
+      const appui = q < 0.06 ? 7 : (nb >= 4 && nb % 2 === 0 && Math.abs(q - nb / 2) < 0.06) ? 3.5 : Math.abs(q - Math.round(q)) < 0.06 ? 1.5 : -2;
+      const u = ((m % PH) + (g.t - mes[m]) / dm) / PH;
+      const arc = 5.5 * Math.sin(Math.PI * Math.min(1, u * 1.15)) - (u > 0.87 ? 2.5 : 0) - (m >= nMes - 1 ? 4 : 0);
+      const tri = g.notes.slice().sort((a, b) => a.midi - b.midi), top = tri[tri.length - 1], bass = tri[0];
+      const arpege = g.staff !== haut && tri.length >= 3;
+      const base = 62 + appui + arc + dv;
+      tri.forEach((e, k) => {
+        let v, off = dt;
+        if (g.staff === haut) {
+          if (e === top) { v = base + 8 + U.borne(0.4 * (e.midi - moyMelo), -5, 5); off += 0.004 + Math.abs(gauss()) * 0.006; }
+          else { v = base - 4 - 2.5 * (tri.length - 1 - k); off += r() * 0.006; }
+        } else if (g.staff === bas) {
+          v = e === bass ? base - 4 : base - 11; off += e === bass ? gauss() * 0.004 - 0.004 : 0;
+        } else { v = e === top ? base - 6 : base - 10; }
+        if (arpege) off += k * (0.011 + r() * 0.006);
+        else if (g.staff !== haut && e !== bass) off += r() * 0.006;
+        if (nStaves < 2 && g.staff === haut && e !== top && e === bass && tri.length >= 3) off += 0.02;   // une seule portée : la basse d'un gros accord un peu avant
+        // la durée : la pédale tient l'accompagnement jusqu'au prochain changement de basse ; la mélodie lie ses notes
+        let finS = e.fin, rel = 0.32;
+        if (g.staff !== haut && bas >= 0) { const c = prochainChange(e.t); finS = Math.max(e.fin, Math.min(c, mes[m] + dm + noire * 0.5)); rel = 0.75; }
+        else { finS = e.fin + noire * 0.06; rel = changes.length ? 0.55 : 0.4; }
+        const i = indexDe.get(e);
+        if (prochaineMeme[i] < finS + 30) { finS = Math.max(e.t + 40, prochaineMeme[i] - 14); rel = 0.12; }
+        const tj0 = avant(e.t) + off * 1000;
+        e.vel = Math.round(U.borne(v, 24, 108));
+        e.tj = tj0; e.dj = Math.max(60, avant(finS) - tj0); e.rel = rel;
+      });
+    }
+    interpretation = { avant, arriere, graine };
+  }
+
+  // ------------------------------------------------------------ le son : piano à queue Salamander, 3 forces de frappe (douce, moyenne, forte), lookahead
   const RACINES = [["A1", 33], ["C2", 36], ["Ds2", 39], ["Fs2", 42], ["A2", 45], ["C3", 48], ["Ds3", 51], ["Fs3", 54], ["A3", 57], ["C4", 60], ["Ds4", 63], ["Fs4", 66], ["A4", 69], ["C5", 72], ["Ds5", 75], ["Fs5", 78], ["A5", 81], ["C6", 84], ["Ds6", 87], ["Fs6", 90]];
+  const COUCHES = [[4, 40], [8, 60], [12, 92]];                                      // [couche Salamander, vélocité où elle sonne]
   let ctxA = null, banque = null, banqueCtx = null, chaineA = null;
   function contexte() {
     if (!ctxA) { const A = window.AudioContext || window.webkitAudioContext; if (!A) throw new Error("pas de son sur cet appareil"); ctxA = new A(); }
@@ -251,10 +362,19 @@
   async function chargerBanque(ctx) {
     if (banque && banqueCtx === ctx.sampleRate) return banque;
     const dec = (typeof OfflineAudioContext !== "undefined") ? new OfflineAudioContext(2, 1, ctx.sampleRate) : ctx;
+    let niveaux = {};
+    try { const r = await fetch("piano/couches.json"); if (r.ok) for (const n of (await r.json()).notes) niveaux[n.fichier] = n.niveau; } catch (e) { niveaux = {}; }
+    const lire = async (nom, v) => {
+      const r = await fetch("piano/" + nom + "v" + v + ".mp3"); if (!r.ok) throw new Error("échantillon absent : " + nom + " v" + v);
+      return dec.decodeAudioData(await r.arrayBuffer());
+    };
     const res = await Promise.all(RACINES.map(async ([nom, midi]) => {
-      const r = await fetch("piano/" + nom + "v8.mp3"); if (!r.ok) throw new Error("échantillon absent : " + nom);
-      const b = await dec.decodeAudioData(await r.arrayBuffer());
-      return { midi, buf: b };
+      const bufs = {}, niv = niveaux[nom] || {};
+      bufs[8] = await lire(nom, 8);
+      await Promise.all(COUCHES.filter((c) => c[0] !== 8).map(async ([v]) => { try { bufs[v] = await lire(nom, v); } catch (e) { /* ancienne banque : la couche moyenne suffit */ } }));
+      // chaque couche ramenée au niveau de la moyenne : la force se règle ensuite par la courbe de nuance, le timbre par la couche
+      const gain = {}; for (const [v] of COUCHES) gain[v] = (niv[v] !== undefined && niv[8] !== undefined) ? Math.pow(10, (niv[8] - niv[v]) / 20) : 1;
+      return { midi, buf: bufs[8], bufs, gain };
     }));
     banque = res; banqueCtx = ctx.sampleRate;
     return banque;
@@ -262,19 +382,43 @@
   function chaine(ctx) {
     const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 3; comp.attack.value = 0.004; comp.release.value = 0.25;
     const sortie = ctx.createGain(); sortie.gain.value = 0.9;
-    // une petite salle : écho diffus fabriqué (aucun fichier)
-    const conv = ctx.createConvolver(), L = Math.floor(ctx.sampleRate * 1.7), imp = ctx.createBuffer(2, L, ctx.sampleRate);
-    for (let c = 0; c < 2; c++) { const d = imp.getChannelData(c); for (let i = 0; i < L; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / L, 3.2); }
+    // une petite salle : écho diffus fabriqué (aucun fichier), un peu plus ample et plus doux qu'avant
+    const conv = ctx.createConvolver(), L = Math.floor(ctx.sampleRate * 2.1), imp = ctx.createBuffer(2, L, ctx.sampleRate);
+    for (let c = 0; c < 2; c++) { const d = imp.getChannelData(c); let lp = 0; for (let i = 0; i < L; i++) { lp += 0.35 * ((Math.random() * 2 - 1) - lp); d[i] = lp * 1.9 * Math.pow(1 - i / L, 3.4) * (i < ctx.sampleRate * 0.012 ? i / (ctx.sampleRate * 0.012) : 1); } }
     conv.buffer = imp;
     const sec = ctx.createGain(); sec.gain.value = 1;
-    const hum = ctx.createGain(); hum.gain.value = 0.16;
+    const hum = ctx.createGain(); hum.gain.value = 0.2;
     const bus = ctx.createGain();
     bus.connect(sec); bus.connect(conv); conv.connect(hum); sec.connect(comp); hum.connect(comp); comp.connect(sortie); sortie.connect(ctx.destination);
     return { bus, sortie };
   }
-  function note(ctx, ch, midi, t, duree, vel) {
-    let n = banque[0];
-    for (const b of banque) if (Math.abs(b.midi - midi) < Math.abs(n.midi - midi)) n = b;
+  function racine(midi) { let n = banque[0]; for (const b of banque) if (Math.abs(b.midi - midi) < Math.abs(n.midi - midi)) n = b; return n; }
+  // une note jouée : la couche (ou le mélange de deux couches voisines) selon la force, un filtre qui s'ouvre quand on tape fort,
+  // une extinction plus longue quand la pédale tient.
+  function note(ctx, ch, midi, t, duree, vel, rel) {
+    const n = racine(midi), rate = Math.pow(2, (midi - n.midi) / 12);
+    const presentes = COUCHES.filter((c) => n.bufs[c[0]]);
+    let mel = [];
+    if (vel <= presentes[0][1]) mel = [[presentes[0][0], 1]];
+    else if (vel >= presentes[presentes.length - 1][1]) mel = [[presentes[presentes.length - 1][0], 1]];
+    else for (let i = 1; i < presentes.length; i++) if (vel <= presentes[i][1]) { const a = presentes[i - 1], b = presentes[i], x = (vel - a[1]) / (b[1] - a[1]); mel = [[a[0], Math.cos(x * Math.PI / 2)], [b[0], Math.sin(x * Math.PI / 2)]]; break; }
+    const nuance = Math.pow(10, 18 * Math.log10(Math.max(12, vel) / 70) / 20);          // vélocité -> niveau (environ 18 dB entre pp et ff)
+    const gain = 0.51 * nuance * Math.pow(10, U.borne((midi - 64) * 0.004, -0.2, 0.2));
+    const fin = t + Math.max(0.12, duree), r = rel || 0.4;
+    const filtre = ctx.createBiquadFilter(); filtre.type = "lowpass"; filtre.Q.value = 0.5;
+    filtre.frequency.value = Math.min(ctx.sampleRate / 2 - 100, 1400 + Math.pow(vel / 127, 2) * 15000);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(gain, t); env.gain.setValueAtTime(gain, fin); env.gain.setTargetAtTime(0, fin, r / 3.2);
+    filtre.connect(env); env.connect(ch.bus);
+    for (const [v, part] of mel) {
+      const src = ctx.createBufferSource(); src.buffer = n.bufs[v]; src.playbackRate.value = rate;
+      const g = ctx.createGain(); g.gain.value = part * (n.gain[v] || 1);
+      src.connect(g); g.connect(filtre); src.start(t); src.stop(fin + r * 1.6 + 0.05);
+    }
+  }
+  // l'ancienne lecture, gardée pour comparer (rendreAudio(…, { mecanique: true })) : une seule couche, force fixe
+  function noteMecanique(ctx, ch, midi, t, duree, vel) {
+    const n = racine(midi);
     const src = ctx.createBufferSource(); src.buffer = n.buf; src.playbackRate.value = Math.pow(2, (midi - n.midi) / 12);
     const g = ctx.createGain(), force = U.borne(vel / 100, 0.2, 1.1);
     const gain = 0.85 * force * Math.pow(10, U.borne((midi - 64) * 0.004, -0.2, 0.2));
@@ -282,18 +426,22 @@
     g.gain.setValueAtTime(gain, t); g.gain.setValueAtTime(gain, fin); g.gain.exponentialRampToValueAtTime(0.0008, fin + 0.45);
     src.connect(g); g.connect(ch.bus); src.start(t); src.stop(fin + 0.5);
   }
+  const joueMs = (t) => (interpretation ? interpretation.avant(t) : t);              // temps de partition -> temps joué
+  const partMs = (t) => (interpretation ? interpretation.arriere(t) : t);
 
-  const lecture = { etat: "arret", t0: 0, deb: 0, prochain: 0, minut: 0, img: 0, ctx: null, vivants: new Set() };
-  const tempsActuel = () => (lecture.etat === "arret" ? lecture.deb : lecture.deb + (lecture.ctx.currentTime - lecture.t0) * facteur * 1000 * 1);
+  const lecture = { etat: "arret", t0: 0, deb: 0, debJ: 0, prochain: 0, minut: 0, img: 0, ctx: null, vivants: new Set() };
+  const tempsActuel = () => (lecture.etat === "arret" ? lecture.deb : partMs(lecture.debJ + (lecture.ctx.currentTime - lecture.t0) * facteur * 1000));
   // Les temps de la timemap sont en ms à bpmBase ; facteur = vitesse relative (1 = tempo de la partition).
+  // Le jeu (e.tj, e.dj) est en ms jouées à bpmBase : le rubato y est déjà ; le curseur revient en temps de partition.
   async function demarrer(depuisMs, finMs) {
     if (!eventsNotes.length) return;
     try {
       const ctx = contexte();
       lecture.etat = "charge"; majBoutonLire();
       await chargerBanque(ctx);
+      if (!interpretation) interpreter();
       if (!chaineA || chaineA.ctx !== ctx) { chaineA = chaine(ctx); chaineA.ctx = ctx; }
-      lecture.ctx = ctx; lecture.deb = depuisMs || 0; lecture.t0 = ctx.currentTime + 0.08;
+      lecture.ctx = ctx; lecture.deb = depuisMs || 0; lecture.debJ = joueMs(lecture.deb); lecture.t0 = ctx.currentTime + 0.08;
       lecture.prochain = eventsNotes.findIndex((e) => e.t >= lecture.deb - 1);
       if (lecture.prochain < 0) lecture.prochain = eventsNotes.length;
       lecture.fin = finMs || 0; lecture.etat = "lecture"; majBoutonLire();
@@ -306,15 +454,17 @@
     const ctx = lecture.ctx, horizon = ctx.currentTime + 0.7;
     while (lecture.prochain < eventsNotes.length) {
       const e = eventsNotes[lecture.prochain];
-      const quand = lecture.t0 + (e.t - lecture.deb) / (1000 * facteur);
+      const tj = e.tj !== undefined ? e.tj : e.t;
+      const quand = lecture.t0 + (tj - lecture.debJ) / (1000 * facteur);
       if (quand > horizon) break;
       if (lecture.fin && e.t >= lecture.fin) { lecture.prochain = eventsNotes.length; break; }
       lecture.prochain++;
       if (!mainsActives.has(e.staff)) continue;
-      note(ctx, chaineA, e.midi, Math.max(quand, ctx.currentTime), (e.fin - e.t) / (1000 * facteur) * 0.96, 70);
+      const dj = e.dj !== undefined ? e.dj : (e.fin - e.t) * 0.96;
+      note(ctx, chaineA, e.midi, Math.max(quand, ctx.currentTime), dj / (1000 * facteur), e.vel || 70, e.rel);
     }
     const dernier = lecture.fin ? Math.min(lecture.fin, eventsNotes[eventsNotes.length - 1].fin) : eventsNotes[eventsNotes.length - 1].fin;
-    if (lecture.prochain >= eventsNotes.length && ctx.currentTime > lecture.t0 + (dernier - lecture.deb) / (1000 * facteur) + 0.6) arreterLecture(false, !lecture.fin);
+    if (lecture.prochain >= eventsNotes.length && ctx.currentTime > lecture.t0 + (joueMs(dernier) - lecture.debJ) / (1000 * facteur) + 0.6) arreterLecture(false, !lecture.fin);
   }
   // le curseur : les notes qui sonnent s'allument, une barre fine suit, la page défile pour garder la ligne en vue
   function boucle() {
@@ -449,18 +599,43 @@
     if (cmd.section) jouerSection(cmd.section); else if (!modeExercices()) demarrer(0);
   });
 
-  // rendu hors ligne complet (essais : aucun son sur la machine) -> { duree, crete, rms, notes }
-  P.rendreAudio = async function (secondes) {
+  // rendu hors ligne complet (essais : aucun son sur la machine) -> { duree, crete, rms, notes, vel, enveloppe, centroide }
+  // options.mecanique : l'ancienne lecture (force fixe, une couche, pile sur la grille), pour comparer.
+  P.rendreAudio = async function (secondes, options) {
     if (!eventsNotes.length) return null;
-    const sr = 22050, dur = Math.min(secondes || 12, (eventsNotes[eventsNotes.length - 1].fin) / 1000 / facteur + 1.5);
+    const meca = !!(options && options.mecanique), sr = 22050;
+    if (!meca && !interpretation) interpreter();
+    const finJ = meca ? eventsNotes[eventsNotes.length - 1].fin : joueMs(eventsNotes[eventsNotes.length - 1].fin);
+    const dur = Math.min(secondes || 12, finJ / 1000 / facteur + 1.5);
     const oc = new OfflineAudioContext(2, Math.ceil(dur * sr), sr);
     await chargerBanque(oc);
-    const ch = chaine(oc); let n = 0;
-    for (const e of eventsNotes) { const t = e.t / (1000 * facteur); if (t > dur - 0.3) break; if (!mainsActives.has(e.staff)) continue; note(oc, ch, e.midi, t, (e.fin - e.t) / (1000 * facteur) * 0.96, 70); n++; }
+    const ch = chaine(oc); let n = 0; const vels = [];
+    for (const e of eventsNotes) {
+      if (!mainsActives.has(e.staff)) continue;
+      if (meca) { const t = e.t / (1000 * facteur); if (t > dur - 0.3) continue; noteMecanique(oc, ch, e.midi, t, (e.fin - e.t) / (1000 * facteur) * 0.96, 70); vels.push(70); }
+      else { const t = e.tj / (1000 * facteur); if (t > dur - 0.3) continue; note(oc, ch, e.midi, Math.max(0, t), e.dj / (1000 * facteur), e.vel, e.rel); vels.push(e.vel); }
+      n++;
+    }
     const r = await oc.startRendering(), x = r.getChannelData(0);
     let crete = 0, s = 0; for (let i = 0; i < x.length; i++) { const a = Math.abs(x[i]); if (a > crete) crete = a; s += x[i] * x[i]; }
-    return { duree: +dur.toFixed(2), notes: n, crete: +crete.toFixed(3), rms: +Math.sqrt(s / x.length).toFixed(4) };
+    // enveloppe : RMS par tranche de 250 ms (en dB), et son écart (un jeu vivant respire)
+    const W = Math.floor(sr * 0.25), env = [];
+    for (let i = 0; i + W <= x.length; i += W) { let q = 0; for (let j = i; j < i + W; j++) q += x[j] * x[j]; env.push(10 * Math.log10(q / W + 1e-12)); }
+    const actifs = env.filter((v) => v > -60), moy = actifs.reduce((a, b) => a + b, 0) / (actifs.length || 1);
+    const ecartEnv = Math.sqrt(actifs.reduce((a, b) => a + (b - moy) * (b - moy), 0) / (actifs.length || 1));
+    // centroïde spectral moyen (petite DFT sur 1024 points, toutes les 0,5 s)
+    const N = 1024; let cs = 0, cn = 0;
+    for (let i = 0; i + N <= x.length; i += Math.floor(sr * 0.5)) {
+      let num = 0, den = 0;
+      for (let k = 1; k < N / 2; k += 2) { let re = 0, im = 0; for (let j = 0; j < N; j += 2) { const w = x[i + j] * (0.5 - 0.5 * Math.cos(2 * Math.PI * j / N)); re += w * Math.cos(2 * Math.PI * k * j / N); im -= w * Math.sin(2 * Math.PI * k * j / N); } const m = Math.hypot(re, im); num += m * k * sr / N; den += m; }
+      if (den > 1e-6) { cs += num / den; cn++; }
+    }
+    const vm = vels.reduce((a, b) => a + b, 0) / (vels.length || 1), ve = Math.sqrt(vels.reduce((a, b) => a + (b - vm) * (b - vm), 0) / (vels.length || 1));
+    return { mecanique: meca, duree: +dur.toFixed(2), notes: n, crete: +crete.toFixed(3), rms: +Math.sqrt(s / x.length).toFixed(4),
+      vel: { moy: +vm.toFixed(1), ecart: +ve.toFixed(1), min: Math.min(...vels), max: Math.max(...vels) },
+      enveloppe: { ecartDb: +ecartEnv.toFixed(2), tranches: env.length }, centroide: Math.round(cn ? cs / cn : 0) };
   };
+  P.interpretation = () => (interpretation ? { graine: interpretation.graine, notes: eventsNotes.slice(0, 24).map((e) => ({ midi: e.midi, staff: e.staff, t: Math.round(e.t), tj: Math.round(e.tj), vel: e.vel })) } : null);
   P.etatSections = () => ({ mode: modeExercices() ? "exercices" : "morceau", sections: sectionsDe().length, tabs: rendu ? rendu.querySelectorAll(".tab-section").length : 0 });
   P.regler = (o) => { if (o.mains) { mainsActives = new Set(o.mains); } if (o.bpm) { facteur = o.bpm / bpmBase; majTempo(); } };
   P.voir = voir;

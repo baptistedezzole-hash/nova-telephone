@@ -1083,7 +1083,15 @@
           c.modifier(o.id, Object.assign({ ext_versions: vs }, cmd.titre && cmd.titre !== o.titre ? { titre: cmd.titre } : {}));
           const n = Object.keys(vs.partitions).length + (vs.ecoute ? 1 : 0);
           r.versions = Object.keys(vs.partitions).concat(vs.ecoute ? ["ecoute"] : []);
-          r.dit = "« " + (cmd.titre || o.titre || nom) + " » " + (r.creee ? "ajoutée dans « " + (cmd.dans || "Chant") + " »" : "mise à jour") + " : paroles + " + n + " version" + (n > 1 ? "s" : "") + " à choisir en haut de la feuille.";
+          // l'ancienne page « Titre (piano + chant) » (partition seule, d'avant les versions) : à la corbeille, jamais effacée.
+          // Titre EXACT, même classeur, et seulement une partition lue : rien d'autre ne peut partir par erreur.
+          if (typeof cmd.ancienne === "string" && cmd.ancienne.trim()) {
+            const a = c.trouver(cmd.ancienne.trim(), { type: "feuille" }), ka = a && rangee(a), ko = rangee(o);
+            if (a && a.id !== o.id && !a.supprime && plat(a.titre) === plat(cmd.ancienne) && a.propre && a.propre.partition && ka && ko && ka.id === ko.id) {
+              c.jeter(a.id); r.jetee = a.titre;
+            }
+          }
+          r.dit = "« " + (cmd.titre || o.titre || nom) + " » " + (r.creee ? "ajoutée dans « " + (cmd.dans || "Chant") + " »" : "mise à jour") + " : paroles + " + n + " version" + (n > 1 ? "s" : "") + " à choisir en haut de la feuille." + (r.jetee ? " L'ancienne page « " + r.jetee + " » est dans la corbeille du cartable." : "");
           break;
         }
         case "partition-jouer": {                             // « joue la section 3 de … » : l'interface ouvre la page et joue (surNova)
